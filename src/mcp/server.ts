@@ -1,13 +1,21 @@
 /**
  * JS API Hunter - MCP Server
  * 暴露扫描/Fuzz 工具给 Claude Code 等 MCP 客户端调用
- * 
+ *
  * 使用方式：
  *   node out/mcp/server.js
- *   Claude Code 配置中添加到 mcpServers
+ *   Claude Code 配置中添加到 mcpServers:
+ *   {
+ *     "mcpServers": {
+ *       "js-api-hunter": {
+ *         "command": "node",
+ *         "args": ["d:\\trae doc\\js接口发现\\out\\mcp\\server.js"]
+ *       }
+ *     }
+ *   }
  */
 
-import * as http from 'http';
+import * as readline from 'readline';
 import { collectJsFiles } from '../collector/collector';
 import { parseEndpoints } from '../parser/parser';
 import { assembleRequests } from '../assembler/assembler';
@@ -97,57 +105,47 @@ const TOOLS = [
   }
 ];
 
-const PORT = 21517; // JSAH = JS API Hunter
+function log(message: string): void {
+  process.stderr.write(`[JS API Hunter MCP] ${message}\n`);
+}
 
-function startServer() {
-  const server = http.createServer(async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+function sendResponse(response: any): void {
+  // 使用 Buffer.write 保证原子写入，避免多进程并发时输出交错
+  const json = JSON.stringify(response);
+  const buffer = Buffer.from(json + '\n', 'utf-8');
+  process.stdout.write(buffer);
+}
 
-    if (req.method === 'OPTIONS') {
-      res.writeHead(200);
-      res.end();
-      return;
-    }
+function startStdioServer(): void {
+  log('MCP stdio server starting...');
 
-    if (req.method === 'GET' && req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', endpoints: endpoints.length, fuzzResults: fuzzResults.length }));
-      return;
-    }
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false
+  });
 
-    if (req.method === 'POST' && req.url === '/mcp') {
-      let body = '';
-      req.on('data', chunk => body += chunk);
-      req.on('end', async () => {
-        try {
-          const request = JSON.parse(body);
-          const response = await handleMcpRequest(request);
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(response));
-        } catch (err: any) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32603, message: err.message },
-            id: null
-          }));
-        }
+  rl.on('line', async (line: string) => {
+    try {
+      const request = JSON.parse(line);
+      const response = await handleMcpRequest(request);
+      sendResponse(response);
+    } catch (err: any) {
+      sendResponse({
+        jsonrpc: '2.0',
+        error: { code: -32700, message: `Parse error: ${err.message}` },
+        id: null
       });
-      return;
     }
-
-    res.writeHead(404);
-    res.end('Not Found');
   });
 
-  server.listen(PORT, () => {
-    console.log(`[JS API Hunter MCP] Server running on http://localhost:${PORT}`);
-    console.log(`[JS API Hunter MCP] Claude Code config: add to mcpServers with url http://localhost:${PORT}/mcp`);
+  rl.on('close', () => {
+    log('stdin closed, shutting down');
+    process.exit(0);
   });
 
-  return server;
+  // 保持进程存活，等待 stdin 输入
+  process.stdin.resume();
 }
 
 async function handleMcpRequest(request: any): Promise<any> {
@@ -200,10 +198,10 @@ async function callTool(name: string, args: any): Promise<any> {
       targetUrl = url;
 
       const jsFiles = await collectJsFiles(url, (count) => {
-        console.log(`  Collecting JS files: ${count}`);
+        log(`  Collecting JS files: ${count}`);
       });
 
-      console.log(`Collected ${jsFiles.length} JS files`);
+      log(`Collected ${jsFiles.length} JS files`);
 
       const rawEndpoints = parseEndpoints(jsFiles);
       assembleRequests(rawEndpoints, jsFiles);
@@ -290,10 +288,10 @@ async function callTool(name: string, args: any): Promise<any> {
         testHorizontal: false
       };
 
-      console.log(`Fuzzing: ${targetEndpoint.fullUrl || targetEndpoint.url}`);
+      log(`Fuzzing: ${targetEndpoint.fullUrl || targetEndpoint.url}`);
 
       const result = await runFuzz(targetEndpoint, config, (progress) => {
-        console.log(`  [${progress.phase}] ${progress.message}`);
+        log(`  [${progress.phase}] ${progress.message}`);
       });
 
       fuzzResults.push(result);
@@ -340,7 +338,7 @@ async function callTool(name: string, args: any): Promise<any> {
       const vulnHosts = new Set<string>();
 
       for (const ep of endpoints) {
-        console.log(`Horizontal Fuzz: ${ep.path}`);
+        log(`Horizontal Fuzz: ${ep.path}`);
         const results = await runHorizontalFuzz(ep, subdomains, config, () => {});
         allResults.push(...results);
 
@@ -454,8 +452,7 @@ function generateReport(format: string): string {
   return md;
 }
 
-// 如果直接运行此文件，启动 MCP 服务器
+// 如果直接运行此文件，启动 stdio MCP 服务器
 if (require.main === module) {
-  startServer();
-  console.log('Press Ctrl+C to stop');
+  startStdioServer();
 }

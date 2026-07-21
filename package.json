@@ -11,9 +11,9 @@
     "url": "https://github.com/ookini-kawaii/js-api-hunter"
   },
   "bugs": {
-    "url": "https://github.com/zhanglin/js-api-hunter/issues"
+    "url": "https://github.com/ookini-kawaii/js-api-hunter/issues"
   },
-  "homepage": "https://github.com/zhanglin/js-api-hunter#readme",
+  "homepage": "https://github.com/ookini-kawaii/js-api-hunter#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -89,49 +89,51 @@
       "view/title": [
         {
           "command": "jsApiHunter.scan",
-          "when": "view == jsApiHunter.endpoints",
+          "when": "view == js-api-hunter-endpoints",
           "group": "navigation"
         },
         {
           "command": "jsApiHunter.refresh",
-          "when": "view == jsApiHunter.endpoints",
+          "when": "view == js-api-hunter-endpoints",
           "group": "navigation"
         },
         {
           "command": "jsApiHunter.clear",
-          "when": "view == jsApiHunter.endpoints",
+          "when": "view == js-api-hunter-endpoints",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "jsApiHunter.fuzzEndpoint",
-          "when": "view == jsApiHunter.endpoints && viewItem == endpoint",
+          "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
           "group": "inline"
         },
         {
           "command": "jsApiHunter.viewEndpointDetail",
-          "when": "view == jsApiHunter.endpoints && viewItem == endpoint",
+          "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
           "group": "context"
         },
         {
           "command": "jsApiHunter.copyEndpoint",
-          "when": "view == jsApiHunter.endpoints && viewItem == endpoint",
+          "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
           "group": "context"
         }
       ]
     },
-    "views": {
+    "viewsContainers": {
       "activitybar": [
         {
-          "id": "jsApiHunter.sidebar",
+          "id": "js-api-hunter-sidebar",
           "title": "JS API Hunter",
           "icon": "$(bug)"
         }
-      ],
-      "jsApiHunter.sidebar": [
+      ]
+    },
+    "views": {
+      "js-api-hunter-sidebar": [
         {
-          "id": "jsApiHunter.endpoints",
+          "id": "js-api-hunter-endpoints",
           "name": "发现的端点"
         }
       ]

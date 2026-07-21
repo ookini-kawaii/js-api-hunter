@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册 TreeView
   const treeProvider = new EndpointTreeProvider(scanContext);
-  const treeView = vscode.window.createTreeView('jsApiHunter.endpoints', {
+  const treeView = vscode.window.createTreeView('js-api-hunter-endpoints', {
     treeDataProvider: treeProvider,
     showCollapseAll: true
   });
