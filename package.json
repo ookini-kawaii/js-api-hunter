@@ -1,0 +1,181 @@
+{
+  "name": "js-api-hunter",
+  "displayName": "JS API Hunter",
+  "description": "从 JS 文件中自动发现隐藏 API 接口，拼装完整请求，批量越权/Fuzz 测试。将 JS 接口挖洞的七步手工作坊升级为一键自动化流水线。",
+  "version": "0.1.0",
+  "publisher": "ookini-kawaii",
+  "license": "MIT",
+  "icon": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ookini-kawaii/js-api-hunter"
+  },
+  "bugs": {
+    "url": "https://github.com/zhanglin/js-api-hunter/issues"
+  },
+  "homepage": "https://github.com/zhanglin/js-api-hunter#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "security",
+    "api",
+    "endpoint",
+    "javascript",
+    "pentest",
+    "bug-bounty",
+    "recon",
+    "fuzzer",
+    "vulnerability",
+    "idor",
+    "sqli",
+    "ssrf",
+    "auth-bypass",
+    "mcp"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "jsApiHunter.scan",
+        "title": "JS API Hunter: 新建扫描",
+        "icon": "$(search)"
+      },
+      {
+        "command": "jsApiHunter.refresh",
+        "title": "JS API Hunter: 刷新结果"
+      },
+      {
+        "command": "jsApiHunter.clear",
+        "title": "JS API Hunter: 清空结果"
+      },
+      {
+        "command": "jsApiHunter.viewEndpointDetail",
+        "title": "查看端点详情"
+      },
+      {
+        "command": "jsApiHunter.copyEndpoint",
+        "title": "复制完整请求"
+      },
+      {
+        "command": "jsApiHunter.exportResults",
+        "title": "JS API Hunter: 导出结果"
+      },
+      {
+        "command": "jsApiHunter.fuzzEndpoint",
+        "title": "JS API Hunter: Fuzz 测试端点",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "jsApiHunter.horizontalFuzz",
+        "title": "JS API Hunter: 横向 Fuzz（多子域名）"
+      },
+      {
+        "command": "jsApiHunter.analyzeSignatures",
+        "title": "JS API Hunter: 分析签名/加密逻辑",
+        "icon": "$(key)"
+      },
+      {
+        "command": "jsApiHunter.setupMcp",
+        "title": "JS API Hunter: MCP 集成配置",
+        "icon": "$(plug)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "jsApiHunter.scan",
+          "when": "view == jsApiHunter.endpoints",
+          "group": "navigation"
+        },
+        {
+          "command": "jsApiHunter.refresh",
+          "when": "view == jsApiHunter.endpoints",
+          "group": "navigation"
+        },
+        {
+          "command": "jsApiHunter.clear",
+          "when": "view == jsApiHunter.endpoints",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "jsApiHunter.fuzzEndpoint",
+          "when": "view == jsApiHunter.endpoints && viewItem == endpoint",
+          "group": "inline"
+        },
+        {
+          "command": "jsApiHunter.viewEndpointDetail",
+          "when": "view == jsApiHunter.endpoints && viewItem == endpoint",
+          "group": "context"
+        },
+        {
+          "command": "jsApiHunter.copyEndpoint",
+          "when": "view == jsApiHunter.endpoints && viewItem == endpoint",
+          "group": "context"
+        }
+      ]
+    },
+    "views": {
+      "activitybar": [
+        {
+          "id": "jsApiHunter.sidebar",
+          "title": "JS API Hunter",
+          "icon": "$(bug)"
+        }
+      ],
+      "jsApiHunter.sidebar": [
+        {
+          "id": "jsApiHunter.endpoints",
+          "name": "发现的端点"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "JS API Hunter",
+      "properties": {
+        "jsApiHunter.concurrentRequests": {
+          "type": "number",
+          "default": 10,
+          "description": "并发请求数（用于 Fuzz 阶段）"
+        },
+        "jsApiHunter.timeout": {
+          "type": "number",
+          "default": 30000,
+          "description": "请求超时时间（毫秒）"
+        },
+        "jsApiHunter.passiveSources": {
+          "type": "boolean",
+          "default": true,
+          "description": "是否启用被动来源收集（Wayback Machine 等）"
+        },
+        "jsApiHunter.userAgent": {
+          "type": "string",
+          "default": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "description": "自定义 User-Agent"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "puppeteer-core": "^22.0.0",
+    "acorn": "^8.11.0",
+    "acorn-walk": "^8.3.0"
+  }
+}
