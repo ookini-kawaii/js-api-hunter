@@ -13,6 +13,24 @@ export async function runFuzz(
   const tests: SingleTestResult[] = [];
   let testIndex = 0;
 
+  const targetUrl = endpoint.fullUrl || endpoint.url || '';
+  if (!targetUrl) {
+    return {
+      endpointId: endpoint.id,
+      endpoint,
+      targetHost: '',
+      tests: [{
+        testType: 'auth_bypass' as TestType,
+        status: 'error',
+        description: '无法测试：端点 URL 为空',
+        requestInfo: `${endpoint.method} ${endpoint.path}`
+      }],
+      overallVulnerable: false,
+      vulnerabilityLevel: 'info',
+      timestamp: Date.now()
+    };
+  }
+
   const totalTests = countTests(config);
   onProgress({ phase: 'init', total: totalTests, completed: 0, message: `开始测试: ${endpoint.path}` });
 

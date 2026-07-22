@@ -39,15 +39,9 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
 
     const ctx = this.scanContext;
 
-    // 空闲状态
+    // 空闲状态 - 显示欢迎面板
     if (ctx.progress.phase === 'idle') {
-      return [new EndpointTreeItem(
-        '点击搜索图标开始扫描',
-        '$(search)',
-        vscode.TreeItemCollapsibleState.None,
-        undefined,
-        { command: 'jsApiHunter.scan', title: '开始扫描' }
-      )];
+      return this.buildWelcomeView();
     }
 
     // 扫描中
@@ -126,6 +120,55 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
     }
 
     return items;
+  }
+
+  private buildWelcomeView(): EndpointTreeItem[] {
+    return [
+      new EndpointTreeItem(
+        '🚀 开始扫描',
+        '$(search)',
+        vscode.TreeItemCollapsibleState.None,
+        undefined,
+        { command: 'jsApiHunter.scan', title: '开始扫描' }
+      ),
+      new EndpointTreeItem(
+        '📡 分析签名/加密逻辑',
+        '$(key)',
+        vscode.TreeItemCollapsibleState.None,
+        undefined,
+        { command: 'jsApiHunter.analyzeSignatures', title: '分析签名' }
+      ),
+      new EndpointTreeItem(
+        '🔌 配置 AI 集成 (MCP)',
+        '$(plug)',
+        vscode.TreeItemCollapsibleState.None,
+        undefined,
+        { command: 'jsApiHunter.setupMcp', title: 'MCP 配置' }
+      ),
+      new EndpointTreeItem(
+        '━━━━━━━━━━━━━━━━',
+        '$(dash)',
+        vscode.TreeItemCollapsibleState.None
+      ),
+      new EndpointTreeItem(
+        '欢迎使用 JS API Hunter',
+        '$(info)',
+        vscode.TreeItemCollapsibleState.None
+      ),
+      new EndpointTreeItem(
+        '输入 URL → 自动发现 API → 一键测试漏洞',
+        '$(comment)',
+        vscode.TreeItemCollapsibleState.None
+      ),
+    ];
+  }
+
+  private welcomeItem(label: string, icon: string, cmd?: string): EndpointTreeItem {
+    return new EndpointTreeItem(
+      label, icon, vscode.TreeItemCollapsibleState.None,
+      undefined,
+      cmd ? { command: cmd, title: label } : undefined
+    );
   }
 
   private getMethodIcon(method: string): string {

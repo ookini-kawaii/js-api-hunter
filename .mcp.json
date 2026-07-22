@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "js-api-hunter": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "d:/trae doc/js接口发现/out/mcp/server.js"
+      ],
+      "env": {}
+    }
+  }
+}

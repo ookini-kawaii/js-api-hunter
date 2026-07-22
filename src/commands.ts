@@ -118,7 +118,8 @@ export function registerCommands(
   });
 
   // 复制端点
-  const copyCmd = vscode.commands.registerCommand('jsApiHunter.copyEndpoint', (endpoint) => {
+  const copyCmd = vscode.commands.registerCommand('jsApiHunter.copyEndpoint', (arg: any) => {
+    const endpoint = arg?.endpoint || arg;
     vscode.env.clipboard.writeText(`${endpoint.method} ${endpoint.fullUrl}`);
     vscode.window.showInformationMessage('已复制完整请求 URL');
   });
@@ -151,8 +152,11 @@ export function registerCommands(
   });
 
   // Fuzz 单个端点
-  const fuzzCmd = vscode.commands.registerCommand('jsApiHunter.fuzzEndpoint', async (endpoint: EndpointInfo) => {
-    if (!endpoint) {
+  const fuzzCmd = vscode.commands.registerCommand('jsApiHunter.fuzzEndpoint', async (arg: any) => {
+    // 从 TreeView 右键菜单传过来的是 TreeItem，提取 endpoint
+    let endpoint: EndpointInfo | undefined = arg?.endpoint || arg;
+
+    if (!endpoint || !endpoint.fullUrl) {
       const picked = await vscode.window.showQuickPick(
         scanContext.endpoints.map(ep => ({
           label: `${ep.method} ${ep.path}`,

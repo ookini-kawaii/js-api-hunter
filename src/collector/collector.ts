@@ -1,10 +1,8 @@
-import * as puppeteer from 'puppeteer-core';
 import { JsFile, JsSource } from '../types';
 
 /**
  * 收集目标网站的所有 JS 文件
- * - 使用 Puppeteer 打开网站，拦截网络请求
- * - 可选：从 Wayback Machine 等被动来源补充
+ * 策略：先尝试 Puppeteer 全自动，失败则降级为纯 HTTP 抓取
  */
 export async function collectJsFiles(
   targetUrl: string,
@@ -13,27 +11,163 @@ export async function collectJsFiles(
   const jsFiles: JsFile[] = [];
   const collectedUrls = new Set<string>();
 
-  // 查找本地 Chrome/Chromium
+  // 先尝试纯 HTTP 方式（更可靠，不受沙箱限制）
+  try {
+    await collectViaHttp(targetUrl, jsFiles, collectedUrls, onProgress);
+  } catch (err: any) {
+    console.log('HTTP 收集失败，尝试 Puppeteer: ' + err.message);
+  }
+
+  // 如果 HTTP 没收集到东西，尝试 Puppeteer
+  if (jsFiles.length === 0) {
+    try {
+      await collectViaPuppeteer(targetUrl, jsFiles, collectedUrls, onProgress);
+    } catch (err: any) {
+      throw new Error(`JS 收集失败: ${err.message}。请检查 URL 是否正确、网络是否可达。`);
+    }
+  }
+
+  return jsFiles;
+}
+
+/** 纯 HTTP 方式收集 JS 文件 */
+async function collectViaHttp(
+  targetUrl: string,
+  jsFiles: JsFile[],
+  collectedUrls: Set<string>,
+  onProgress?: (count: number) => void
+): Promise<void> {
+  // 1. 抓取 HTML
+  const htmlResp = await fetch(targetUrl, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+  });
+
+  if (!htmlResp.ok) {
+    throw new Error(`HTTP ${htmlResp.status}: 页面返回错误`);
+  }
+
+  const html = await htmlResp.text();
+  const baseUrl = new URL(targetUrl);
+
+  // 2. 从 HTML 中提取 <script> 标签
+  const scriptUrls = extractScriptUrls(html, baseUrl);
+
+  if (onProgress) {
+    onProgress(0);
+  }
+
+  // 3. 并发下载所有 JS 文件
+  const results = await Promise.allSettled(
+    scriptUrls.map(async (url) => {
+      if (collectedUrls.has(url)) { return; }
+
+      try {
+        const resp = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(15000)
+        });
+
+        if (resp.ok) {
+          const content = await resp.text();
+          if (content && content.length > 10) {
+            collectedUrls.add(url);
+            jsFiles.push({
+              url,
+              content,
+              source: 'manual' as JsSource,
+              size: content.length
+            });
+
+            if (onProgress) {
+              onProgress(jsFiles.length);
+            }
+          }
+        }
+      } catch {
+        // 跳过无法下载的文件
+      }
+    })
+  );
+
+  // 4. 也把 HTML 本身当做一个源来解析（内联脚本）
+  const inlineScripts = extractInlineScripts(html);
+  if (inlineScripts.length > 0) {
+    collectedUrls.add(targetUrl + '#inline');
+    jsFiles.push({
+      url: targetUrl + '#inline',
+      content: inlineScripts.join('\n'),
+      source: 'manual' as JsSource,
+      size: inlineScripts.join('\n').length
+    });
+  }
+}
+
+/** 从 HTML 中提取 <script src="..."> 的 URL */
+function extractScriptUrls(html: string, baseUrl: URL): string[] {
+  const urls: string[] = [];
+  const regex = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(html)) !== null) {
+    let url = match[1];
+    // 转绝对路径
+    if (url.startsWith('//')) {
+      url = baseUrl.protocol + url;
+    } else if (url.startsWith('/')) {
+      url = baseUrl.origin + url;
+    } else if (!url.startsWith('http')) {
+      url = baseUrl.origin + '/' + url;
+    }
+    urls.push(url);
+  }
+
+  return [...new Set(urls)];
+}
+
+/** 提取内联 <script> 标签的内容 */
+function extractInlineScripts(html: string): string[] {
+  const scripts: string[] = [];
+  const regex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(html)) !== null) {
+    const content = match[1].trim();
+    if (content.length > 10) {
+      scripts.push(content);
+    }
+  }
+
+  return scripts;
+}
+
+/** Puppeteer 方式收集 JS（兜底） */
+async function collectViaPuppeteer(
+  targetUrl: string,
+  jsFiles: JsFile[],
+  collectedUrls: Set<string>,
+  onProgress?: (count: number) => void
+): Promise<void> {
+  // 动态导入，避免强制要求 Puppeteer 启动
+  const puppeteer = await import('puppeteer-core');
+
   const browser = await puppeteer.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
     executablePath: findChromePath()
   });
 
   try {
     const page = await browser.newPage();
     await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36'
     );
 
-    // 拦截所有网络响应，收集 .js 文件
     page.on('response', async (response) => {
       const url = response.url();
       const contentType = response.headers()['content-type'] || '';
 
       if (collectedUrls.has(url)) { return; }
 
-      // 判断是否是 JS 文件
       const isJsFile =
         url.endsWith('.js') ||
         contentType.includes('javascript') ||
@@ -54,50 +188,37 @@ export async function collectJsFiles(
             size: text.length
           });
 
-          if (onProgress) {
-            onProgress(jsFiles.length);
-          }
+          if (onProgress) { onProgress(jsFiles.length); }
         }
-      } catch {
-        // 跳过无法读取的文件
-      }
+      } catch { /* skip */ }
     });
 
-    // 访问目标网站
     await page.goto(targetUrl, {
       waitUntil: 'networkidle2',
       timeout: 30000
     });
 
-    // 等待一下确保所有异步加载的 JS 都被捕获
     await new Promise(resolve => setTimeout(resolve, 3000));
-
   } finally {
     await browser.close();
   }
-
-  return jsFiles;
 }
 
-/** 查找系统中的 Chrome/Chromium 路径 */
 function findChromePath(): string {
   if (process.platform === 'win32') {
     const paths = [
       'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+      (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
       'C:\\Program Files\\Chromium\\Application\\chrome.exe'
     ];
     for (const p of paths) {
-      try {
-        require('fs').accessSync(p);
-        return p;
-      } catch { /* 不存在，继续 */ }
+      try { require('fs').accessSync(p); return p; } catch { /* continue */ }
     }
   } else if (process.platform === 'darwin') {
     return '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   } else {
     return '/usr/bin/google-chrome';
   }
-  return 'chrome'; // 兜底：尝试系统 PATH 中的 chrome
+  return 'chrome';
 }
