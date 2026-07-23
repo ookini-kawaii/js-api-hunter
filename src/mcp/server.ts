@@ -3,13 +3,13 @@
  * 暴露扫描/Fuzz 工具给 Claude Code 等 MCP 客户端调用
  *
  * 使用方式：
- *   node out/mcp/server.js
+ *   node dist/mcp/server.js
  *   Claude Code 配置中添加到 mcpServers:
  *   {
  *     "mcpServers": {
  *       "js-api-hunter": {
  *         "command": "node",
- *         "args": ["d:\\trae doc\\js接口发现\\out\\mcp\\server.js"]
+ *         "args": ["d:\\trae doc\\js接口发现\\dist\\mcp\\server.js"]
  *       }
  *     }
  *   }

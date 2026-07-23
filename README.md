@@ -114,7 +114,7 @@ npm run compile
   "mcpServers": {
     "js-api-hunter": {
       "command": "node",
-      "args": ["/path/to/js-api-hunter/out/mcp/server.js"],
+      "args": ["/path/to/js-api-hunter/dist/mcp/server.js"],
       "description": "JS API Hunter - JS 接口自动发现与测试"
     }
   }

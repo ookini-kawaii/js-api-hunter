@@ -40,7 +40,7 @@
     "onStartupFinished",
     "onView:js-api-hunter-endpoints"
   ],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -224,14 +224,40 @@
         "jsApiHunter.subdomainPrefixes": {
           "type": "array",
           "default": [
-            "test", "dev", "staging", "uat", "qa",
-            "old", "legacy", "internal",
-            "admin", "manage", "manager",
-            "api", "app", "mobile", "wap",
-            "beta", "alpha", "demo", "sandbox", "preprod", "pre", "stage",
-            "cms", "portal", "console", "dashboard",
-            "user-svc", "order-svc", "pay-svc", "gateway", "gw",
-            "test-api", "dev-api", "staging-api"
+            "test",
+            "dev",
+            "staging",
+            "uat",
+            "qa",
+            "old",
+            "legacy",
+            "internal",
+            "admin",
+            "manage",
+            "manager",
+            "api",
+            "app",
+            "mobile",
+            "wap",
+            "beta",
+            "alpha",
+            "demo",
+            "sandbox",
+            "preprod",
+            "pre",
+            "stage",
+            "cms",
+            "portal",
+            "console",
+            "dashboard",
+            "user-svc",
+            "order-svc",
+            "pay-svc",
+            "gateway",
+            "gw",
+            "test-api",
+            "dev-api",
+            "staging-api"
           ],
           "description": "子域名枚举默认前缀列表"
         },
@@ -299,19 +325,21 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run bundle",
     "compile": "tsc -p ./",
+    "bundle": "node esbuild.js",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "esbuild": "^0.28.1",
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "puppeteer-core": "^22.0.0",
     "acorn": "^8.11.0",
-    "acorn-walk": "^8.3.0"
+    "acorn-walk": "^8.3.0",
+    "puppeteer-core": "^22.0.0"
   }
 }

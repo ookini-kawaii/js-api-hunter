@@ -1,7 +1,16 @@
 .vscode/**
 src/**
 node_modules/**
+out/**
 .gitignore
 tsconfig.json
 **/*.ts
-!out/**
+esbuild.js
+*.tmp
+*.log
+docx_images/
+docx_extracted.txt
+extract_docx*.py
+check_docx.py
+!dist/**
+!images/**

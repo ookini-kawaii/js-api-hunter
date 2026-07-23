@@ -413,7 +413,7 @@ export function registerCommands(
       mcpServers: {
         'js-api-hunter': {
           command: 'node',
-          args: [context.extensionPath + '/out/mcp/server.js'],
+          args: [context.extensionPath + '/dist/mcp/server.js'],
           description: 'JS API Hunter - JS 接口自动发现与测试'
         }
       }
