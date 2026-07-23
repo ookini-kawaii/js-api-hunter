@@ -9,6 +9,8 @@ export function activate(context: vscode.ExtensionContext) {
     targetUrl: '',
     jsFiles: [],
     endpoints: [],
+    secrets: [],
+    subdomains: [],
     fuzzResults: [],
     progress: { phase: 'idle', jsFilesFound: 0, endpointsFound: 0, message: '就绪' }
   };

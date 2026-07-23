@@ -2,7 +2,7 @@
   "name": "js-api-hunter",
   "displayName": "JS API Hunter",
   "description": "从 JS 文件中自动发现隐藏 API 接口，拼装完整请求，批量越权/Fuzz 测试。将 JS 接口挖洞的七步手工作坊升级为一键自动化流水线。",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "publisher": "ookini-kawaii",
   "license": "MIT",
   "icon": "",
@@ -47,11 +47,13 @@
       },
       {
         "command": "jsApiHunter.refresh",
-        "title": "JS API Hunter: 刷新结果"
+        "title": "JS API Hunter: 刷新结果",
+        "icon": "$(refresh)"
       },
       {
         "command": "jsApiHunter.clear",
-        "title": "JS API Hunter: 清空结果"
+        "title": "JS API Hunter: 清空结果",
+        "icon": "$(clear-all)"
       },
       {
         "command": "jsApiHunter.viewEndpointDetail",
@@ -59,11 +61,20 @@
       },
       {
         "command": "jsApiHunter.copyEndpoint",
-        "title": "复制完整请求"
+        "title": "复制完整请求 URL"
+      },
+      {
+        "command": "jsApiHunter.copyAsCurl",
+        "title": "复制为 cURL"
+      },
+      {
+        "command": "jsApiHunter.copyAsPython",
+        "title": "复制为 Python requests"
       },
       {
         "command": "jsApiHunter.exportResults",
-        "title": "JS API Hunter: 导出结果"
+        "title": "JS API Hunter: 导出结果",
+        "icon": "$(save)"
       },
       {
         "command": "jsApiHunter.fuzzEndpoint",
@@ -72,12 +83,28 @@
       },
       {
         "command": "jsApiHunter.horizontalFuzz",
-        "title": "JS API Hunter: 横向 Fuzz（多子域名）"
+        "title": "JS API Hunter: 横向 Fuzz（多子域名）",
+        "icon": "$(globe)"
       },
       {
         "command": "jsApiHunter.analyzeSignatures",
         "title": "JS API Hunter: 分析签名/加密逻辑",
         "icon": "$(key)"
+      },
+      {
+        "command": "jsApiHunter.enumerateSubdomains",
+        "title": "JS API Hunter: 子域名枚举",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "jsApiHunter.showSecrets",
+        "title": "JS API Hunter: 查看敏感信息",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "jsApiHunter.verifyEndpoints",
+        "title": "JS API Hunter: 重放验证端点",
+        "icon": "$(check)"
       },
       {
         "command": "jsApiHunter.setupMcp",
@@ -90,34 +117,54 @@
         {
           "command": "jsApiHunter.scan",
           "when": "view == js-api-hunter-endpoints",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "jsApiHunter.enumerateSubdomains",
+          "when": "view == js-api-hunter-endpoints",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jsApiHunter.exportResults",
+          "when": "view == js-api-hunter-endpoints",
+          "group": "navigation@3"
         },
         {
           "command": "jsApiHunter.refresh",
           "when": "view == js-api-hunter-endpoints",
-          "group": "navigation"
+          "group": "navigation@4"
         },
         {
           "command": "jsApiHunter.clear",
           "when": "view == js-api-hunter-endpoints",
-          "group": "navigation"
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
         {
           "command": "jsApiHunter.fuzzEndpoint",
           "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
           "command": "jsApiHunter.viewEndpointDetail",
           "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
-          "group": "context"
+          "group": "context@1"
         },
         {
           "command": "jsApiHunter.copyEndpoint",
           "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
-          "group": "context"
+          "group": "context@2"
+        },
+        {
+          "command": "jsApiHunter.copyAsCurl",
+          "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
+          "group": "context@3"
+        },
+        {
+          "command": "jsApiHunter.copyAsPython",
+          "when": "view == js-api-hunter-endpoints && viewItem == endpoint",
+          "group": "context@4"
         }
       ]
     },
@@ -144,22 +191,106 @@
         "jsApiHunter.concurrentRequests": {
           "type": "number",
           "default": 10,
-          "description": "并发请求数（用于 Fuzz 阶段）"
+          "description": "并发请求数（用于 Fuzz/子域名枚举阶段）"
         },
         "jsApiHunter.timeout": {
           "type": "number",
           "default": 30000,
           "description": "请求超时时间（毫秒）"
         },
-        "jsApiHunter.passiveSources": {
-          "type": "boolean",
-          "default": true,
-          "description": "是否启用被动来源收集（Wayback Machine 等）"
-        },
         "jsApiHunter.userAgent": {
           "type": "string",
           "default": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
           "description": "自定义 User-Agent"
+        },
+        "jsApiHunter.userToken": {
+          "type": "string",
+          "default": "",
+          "description": "默认测试 Token（Bearer xxx），Fuzz 时会同时测带 Token 和裸奔两个版本"
+        },
+        "jsApiHunter.verifyEndpoints": {
+          "type": "boolean",
+          "default": true,
+          "description": "扫描完成后是否自动对端点做重放验证"
+        },
+        "jsApiHunter.pathVariants": {
+          "type": "boolean",
+          "default": true,
+          "description": "横向 Fuzz 时是否启用路径变异（去掉 api/版本号、加 admin 前缀等）"
+        },
+        "jsApiHunter.subdomainPrefixes": {
+          "type": "array",
+          "default": [
+            "test", "dev", "staging", "uat", "qa",
+            "old", "legacy", "internal",
+            "admin", "manage", "manager",
+            "api", "app", "mobile", "wap",
+            "beta", "alpha", "demo", "sandbox", "preprod", "pre", "stage",
+            "cms", "portal", "console", "dashboard",
+            "user-svc", "order-svc", "pay-svc", "gateway", "gw",
+            "test-api", "dev-api", "staging-api"
+          ],
+          "description": "子域名枚举默认前缀列表"
+        },
+        "jsApiHunter.testAuthBypass": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试鉴权绕过"
+        },
+        "jsApiHunter.testIdor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试 URL 路径 IDOR"
+        },
+        "jsApiHunter.testIdorBody": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试 Body/Query IDOR"
+        },
+        "jsApiHunter.testParamInject": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试参数注入"
+        },
+        "jsApiHunter.testSqlInject": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试 SQL 注入"
+        },
+        "jsApiHunter.testNoSqlInject": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试 NoSQL 注入"
+        },
+        "jsApiHunter.testSsrf": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试 SSRF"
+        },
+        "jsApiHunter.testMassAssignment": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试 Mass Assignment"
+        },
+        "jsApiHunter.testBusinessLogic": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试业务逻辑"
+        },
+        "jsApiHunter.testInterfaceAbuse": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试接口滥用（短信轰炸/验证码爆破/刷券）"
+        },
+        "jsApiHunter.testRaceCondition": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试并发竞态"
+        },
+        "jsApiHunter.testSignBypass": {
+          "type": "boolean",
+          "default": true,
+          "description": "Fuzz 时是否测试签名绕过（删除签名字段/头）"
         }
       }
     }

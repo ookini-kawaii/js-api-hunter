@@ -23,11 +23,12 @@ import { runFuzz, runHorizontalFuzz } from '../fuzzer/fuzzer';
 import { EndpointInfo, FuzzResult, ScanContext, FuzzConfig } from '../types';
 
 // 模拟 VS Code 配置
-function getConfig(): { concurrentRequests: number; timeout: number; userAgent: string } {
+function getConfig(): { concurrentRequests: number; timeout: number; userAgent: string; userToken?: string } {
   return {
     concurrentRequests: 10,
     timeout: 30000,
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    userToken: process.env.JS_API_HUNTER_TOKEN
   };
 }
 
@@ -276,15 +277,25 @@ async function callTool(name: string, args: any): Promise<any> {
         return { content: [{ type: 'text', text: 'ERROR: 需要指定 endpoint_index 或 url' }] };
       }
 
+      const cfg = getConfig();
       const config: FuzzConfig = {
-        concurrentRequests: 10,
-        timeout: 30000,
+        concurrentRequests: cfg.concurrentRequests,
+        timeout: cfg.timeout,
         subdomains: [],
+        userToken: cfg.userToken,
         testAuthBypass: true,
         testIdor: true,
+        testIdorBody: true,
         testParamInject: true,
         testSqlInject: true,
+        testNoSqlInject: true,
         testSsrf: true,
+        testMassAssignment: true,
+        testBusinessLogic: true,
+        testInterfaceAbuse: true,
+        testRaceCondition: true,
+        testSignBypass: true,
+        pathVariants: true,
         testHorizontal: false
       };
 
@@ -322,15 +333,25 @@ async function callTool(name: string, args: any): Promise<any> {
         return { content: [{ type: 'text', text: '暂无端点，请先运行 scan_url' }] };
       }
 
+      const cfg = getConfig();
       const config: FuzzConfig = {
-        concurrentRequests: 10,
-        timeout: 30000,
+        concurrentRequests: cfg.concurrentRequests,
+        timeout: cfg.timeout,
         subdomains,
+        userToken: cfg.userToken,
         testAuthBypass: true,
         testIdor: true,
-        testParamInject: false,
-        testSqlInject: false,
-        testSsrf: false,
+        testIdorBody: true,
+        testParamInject: true,
+        testSqlInject: true,
+        testNoSqlInject: true,
+        testSsrf: true,
+        testMassAssignment: true,
+        testBusinessLogic: true,
+        testInterfaceAbuse: true,
+        testRaceCondition: true,
+        testSignBypass: true,
+        pathVariants: true,
         testHorizontal: true
       };
 

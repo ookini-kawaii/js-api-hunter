@@ -21,3 +21,12 @@ Thumbs.db
 # Env
 .env
 .env.local
+
+# Temporary PDF extraction artifacts
+JS接口挖洞.pdf
+JS接口挖洞(2).pdf
+temp_js_interface.pdf
+pdf_extract/
+pdf_extracted.txt
+extract_pdf.py
+compile.log

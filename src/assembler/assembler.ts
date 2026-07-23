@@ -4,6 +4,11 @@ import { EndpointInfo, JsFile } from '../types';
  * 从 JS 文件中识别 baseURL 并拼装完整请求
  */
 export function assembleRequests(endpoints: EndpointInfo[], jsFiles: JsFile[]): void {
+  if (endpoints.length === 0) { return; }
+  assembleBaseUrls(endpoints, jsFiles);
+}
+
+function assembleBaseUrls(endpoints: EndpointInfo[], jsFiles: JsFile[]): void {
   const baseUrls = extractBaseUrls(jsFiles);
 
   for (const ep of endpoints) {
@@ -62,6 +67,10 @@ function findBaseUrlInFile(file: JsFile): string | null {
   const patterns = [
     // baseURL: 'https://api.example.com'
     /baseURL\s*[:=]\s*["'`]([^"'`]+)["'`]/gi,
+    // BASE_URL: 'https://...'
+    /BASE_URL\s*[:=]\s*["'`]([^"'`]+)["'`]/gi,
+    // process.env.VUE_APP_API_URL / process.env.REACT_APP_API_URL
+    /process\.env\.(?:VUE_APP|REACT_APP|NEXT_PUBLIC)_(?:API_)?(?:URL|BASE)\s*[:=]?\s*["'`]([^"'`]+)["'`]/gi,
     // VUE_APP_API_URL: 'https://...'
     /VUE_APP_(?:API_)?(?:URL|BASE)\s*[:=]\s*["'`]([^"'`]+)["'`]/gi,
     // REACT_APP_API_URL
@@ -157,4 +166,73 @@ function joinUrl(base: string, path: string): string {
   const pathTrimmed = path.startsWith('/') ? path : '/' + path;
 
   return baseTrimmed + pathTrimmed;
+}
+
+/**
+ * 重放验证：对每个拼装好的端点发送探测请求
+ * 对应 PDF 第 5 章：先在 Burp Repeater 重放确认请求能通
+ *
+ * 注意：默认使用 GET 探测，POST/PUT/DELETE 等改为 HEAD 或 OPTIONS，
+ *       避免触发副作用。返回端点的 isReachable / verifyStatus / verifyLength。
+ */
+export async function verifyEndpoints(
+  endpoints: EndpointInfo[],
+  token?: string,
+  timeout = 10000
+): Promise<void> {
+  for (const ep of endpoints) {
+    if (!ep.fullUrl || !ep.fullUrl.startsWith('http')) {
+      ep.isReachable = false;
+      continue;
+    }
+
+    const method = ep.method.toUpperCase();
+    const probeMethod = method === 'GET' ? 'GET' : 'HEAD';
+    const headers: Record<string, string> = { 'User-Agent': 'Mozilla/5.0' };
+    if (token) { headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`; }
+
+    try {
+      const resp = await fetch(ep.fullUrl, {
+        method: probeMethod,
+        headers,
+        signal: AbortSignal.timeout(timeout),
+        redirect: 'manual'
+      });
+
+      const body = await resp.text().catch(() => '');
+      ep.verifyStatus = resp.status;
+      ep.verifyLength = body.length;
+      ep.isReachable = resp.status < 400;
+    } catch {
+      ep.isReachable = false;
+      ep.verifyStatus = 0;
+      ep.verifyLength = 0;
+    }
+  }
+}
+
+/** 生成 cURL 命令 */
+export function toCurl(endpoint: EndpointInfo, token?: string): string {
+  const headers: Record<string, string> = { ...endpoint.headers };
+  if (token) { headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`; }
+  const headerStr = Object.entries(headers)
+    .map(([k, v]) => `-H '${k}: ${v}'`)
+    .join(' ');
+  return `curl -X ${endpoint.method} ${headerStr} "${endpoint.fullUrl}"`;
+}
+
+/** 生成 Python requests 脚本 */
+export function toPythonRequests(endpoint: EndpointInfo, token?: string): string {
+  const headers: Record<string, string> = { ...endpoint.headers };
+  if (token) { headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`; }
+  const headerStr = JSON.stringify(headers, null, 2);
+  return `import requests
+
+url = "${endpoint.fullUrl}"
+headers = ${headerStr}
+
+resp = requests.${endpoint.method.toLowerCase()}(url, headers=headers, timeout=10)
+print(resp.status_code)
+print(resp.text[:500])
+`;
 }

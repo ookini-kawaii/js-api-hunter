@@ -1,8 +1,9 @@
 import { JsFile, JsSource } from '../types';
+import { discoverSourceMaps } from './sourcemap';
 
 /**
  * 收集目标网站的所有 JS 文件
- * 策略：先尝试 Puppeteer 全自动，失败则降级为纯 HTTP 抓取
+ * 策略：先尝试纯 HTTP 抓取，再尝试 Puppeteer 兜底，最后自动发现 Source Map
  */
 export async function collectJsFiles(
   targetUrl: string,
@@ -25,6 +26,21 @@ export async function collectJsFiles(
     } catch (err: any) {
       throw new Error(`JS 收集失败: ${err.message}。请检查 URL 是否正确、网络是否可达。`);
     }
+  }
+
+  // 自动发现 Source Map 并还原源码
+  try {
+    const restored = await discoverSourceMaps(jsFiles, (count) => {
+      if (onProgress) { onProgress(jsFiles.length + count); }
+    });
+    for (const f of restored) {
+      if (!collectedUrls.has(f.url)) {
+        collectedUrls.add(f.url);
+        jsFiles.push(f);
+      }
+    }
+  } catch {
+    // Source Map 发现失败不影响主流程
   }
 
   return jsFiles;

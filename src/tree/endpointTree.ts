@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ScanContext, EndpointInfo, RiskLevel } from '../types';
+import { ScanContext, EndpointInfo, RiskLevel, SecretFinding, SubdomainInfo } from '../types';
 
 /** 风险等级对应的图标 */
 const RISK_ICONS: Record<RiskLevel, string> = {
@@ -17,6 +17,9 @@ const RISK_LABELS: Record<RiskLevel, string> = {
   info: '信息 - 公开接口'
 };
 
+/** TreeView 顶层分类 */
+type CategoryType = 'endpoints' | 'secrets' | 'subdomains';
+
 export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<EndpointTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -33,8 +36,8 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
 
   getChildren(element?: EndpointTreeItem): EndpointTreeItem[] {
     if (element) {
-      // 分组下的端点
-      return element.children || [];
+      if (element.children) { return element.children; }
+      return [];
     }
 
     const ctx = this.scanContext;
@@ -53,30 +56,58 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
       )];
     }
 
-    // 无结果
-    if (ctx.endpoints.length === 0) {
-      return [new EndpointTreeItem(
-        '未发现 API 端点',
-        '$(circle-slash)',
-        vscode.TreeItemCollapsibleState.None
-      )];
-    }
+    // 完成后：按分类展示
+    return this.buildCategoryTree();
+  }
 
-    // 按风险等级分组
-    return this.buildGroupedTree(ctx.endpoints);
+  private buildCategoryTree(): EndpointTreeItem[] {
+    const ctx = this.scanContext;
+    const items: EndpointTreeItem[] = [];
+
+    // 端点分类
+    const endpointCategory = new EndpointTreeItem(
+      `API 端点 (${ctx.endpoints.length})`,
+      '$(list-unordered)',
+      vscode.TreeItemCollapsibleState.Expanded,
+      this.buildGroupedTree(ctx.endpoints)
+    );
+    endpointCategory.contextValue = 'category';
+    items.push(endpointCategory);
+
+    // 敏感信息分类
+    const secretCategory = new EndpointTreeItem(
+      `敏感信息 (${ctx.secrets.length})`,
+      '$(key)',
+      ctx.secrets.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+      this.buildSecretTree(ctx.secrets)
+    );
+    secretCategory.contextValue = 'category';
+    secretCategory.command = ctx.secrets.length > 0
+      ? { command: 'jsApiHunter.showSecrets', title: '查看敏感信息' }
+      : undefined;
+    items.push(secretCategory);
+
+    // 子域名分类
+    const aliveCount = ctx.subdomains.filter(s => s.isAlive).length;
+    const subdomainCategory = new EndpointTreeItem(
+      `子域名 (${aliveCount}/${ctx.subdomains.length})`,
+      '$(globe)',
+      ctx.subdomains.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+      this.buildSubdomainTree(ctx.subdomains)
+    );
+    subdomainCategory.contextValue = 'category';
+    items.push(subdomainCategory);
+
+    return items;
   }
 
   private buildGroupedTree(endpoints: EndpointInfo[]): EndpointTreeItem[] {
-    const groups: Record<RiskLevel, EndpointInfo[]> = {
-      high: [],
-      medium: [],
-      low: [],
-      info: []
-    };
-
-    for (const ep of endpoints) {
-      groups[ep.riskLevel].push(ep);
+    if (endpoints.length === 0) {
+      return [new EndpointTreeItem('未发现 API 端点', '$(circle-slash)', vscode.TreeItemCollapsibleState.None)];
     }
+
+    const groups: Record<RiskLevel, EndpointInfo[]> = { high: [], medium: [], low: [], info: [] };
+    for (const ep of endpoints) { groups[ep.riskLevel].push(ep); }
 
     const items: EndpointTreeItem[] = [];
     const groupOrder: RiskLevel[] = ['high', 'medium', 'low', 'info'];
@@ -95,14 +126,11 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
       groupItem.children = eps.map(ep => {
         const methodIcon = this.getMethodIcon(ep.method);
         const label = `${methodIcon} ${ep.method} ${ep.path}`;
-        const icon = ep.riskLevel === 'high' ? '$(error)' :
-                     ep.riskLevel === 'medium' ? '$(warning)' : '$(circle-outline)';
+        const icon = ep.isReachable === false ? '$(debug-disconnect)'
+          : ep.riskLevel === 'high' ? '$(error)'
+            : ep.riskLevel === 'medium' ? '$(warning)' : '$(circle-outline)';
 
-        const item = new EndpointTreeItem(
-          label,
-          icon,
-          vscode.TreeItemCollapsibleState.None
-        );
+        const item = new EndpointTreeItem(label, icon, vscode.TreeItemCollapsibleState.None);
         item.contextValue = 'endpoint';
         item.tooltip = this.buildTooltip(ep);
         item.command = {
@@ -110,8 +138,6 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
           title: '查看详情',
           arguments: [ep]
         };
-
-        // 保存端点引用（用于右键菜单等操作）
         item.endpoint = ep;
         return item;
       });
@@ -122,44 +148,79 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
     return items;
   }
 
+  private buildSecretTree(secrets: SecretFinding[]): EndpointTreeItem[] {
+    if (secrets.length === 0) {
+      return [new EndpointTreeItem('未发现敏感信息', '$(circle-slash)', vscode.TreeItemCollapsibleState.None)];
+    }
+
+    return secrets.slice(0, 50).map(s => {
+      const item = new EndpointTreeItem(
+        `${s.type}: ${s.name}`,
+        s.riskLevel === 'high' ? '$(error)' : '$(warning)',
+        vscode.TreeItemCollapsibleState.None
+      );
+      item.tooltip = `值: ${s.value}\n来源: ${s.sourceFile}`;
+      return item;
+    });
+  }
+
+  private buildSubdomainTree(subdomains: SubdomainInfo[]): EndpointTreeItem[] {
+    if (subdomains.length === 0) {
+      return [new EndpointTreeItem('未收集子域名', '$(circle-slash)', vscode.TreeItemCollapsibleState.None)];
+    }
+
+    // 按分类分组
+    const groups: Record<string, SubdomainInfo[]> = {};
+    for (const s of subdomains) {
+      const cat = s.category || 'other';
+      if (!groups[cat]) { groups[cat] = []; }
+      groups[cat].push(s);
+    }
+
+    const categoryLabels: Record<string, string> = {
+      test: '测试环境（高价值）',
+      legacy: '老系统（高价值）',
+      admin: '管理后台',
+      api: 'API / 微服务',
+      internal: '内部域名',
+      other: '其他'
+    };
+
+    const items: EndpointTreeItem[] = [];
+    for (const [cat, hosts] of Object.entries(groups)) {
+      const aliveCount = hosts.filter(h => h.isAlive).length;
+      const groupItem = new EndpointTreeItem(
+        `${categoryLabels[cat] || cat} (${aliveCount}/${hosts.length})`,
+        '$(folder)',
+        vscode.TreeItemCollapsibleState.Collapsed
+      );
+      groupItem.contextValue = 'subdomain-group';
+      groupItem.children = hosts
+        .sort((a, b) => (a.isAlive === b.isAlive ? 0 : a.isAlive ? -1 : 1))
+        .map(s => {
+          const item = new EndpointTreeItem(
+            `${s.isAlive ? '✓' : '✗'} ${s.host}`,
+            s.isAlive ? '$(globe)' : '$(debug-disconnect)',
+            vscode.TreeItemCollapsibleState.None
+          );
+          item.tooltip = `分类: ${categoryLabels[s.category || 'other'] || s.category}\n来源: ${s.source || '-'}\nIP: ${s.ip || '-'}\nHTTP: ${s.httpStatus || '-'}\n${s.note || ''}`;
+          return item;
+        });
+      items.push(groupItem);
+    }
+
+    return items;
+  }
+
   private buildWelcomeView(): EndpointTreeItem[] {
     return [
-      new EndpointTreeItem(
-        '🚀 开始扫描',
-        '$(search)',
-        vscode.TreeItemCollapsibleState.None,
-        undefined,
-        { command: 'jsApiHunter.scan', title: '开始扫描' }
-      ),
-      new EndpointTreeItem(
-        '📡 分析签名/加密逻辑',
-        '$(key)',
-        vscode.TreeItemCollapsibleState.None,
-        undefined,
-        { command: 'jsApiHunter.analyzeSignatures', title: '分析签名' }
-      ),
-      new EndpointTreeItem(
-        '🔌 配置 AI 集成 (MCP)',
-        '$(plug)',
-        vscode.TreeItemCollapsibleState.None,
-        undefined,
-        { command: 'jsApiHunter.setupMcp', title: 'MCP 配置' }
-      ),
-      new EndpointTreeItem(
-        '━━━━━━━━━━━━━━━━',
-        '$(dash)',
-        vscode.TreeItemCollapsibleState.None
-      ),
-      new EndpointTreeItem(
-        '欢迎使用 JS API Hunter',
-        '$(info)',
-        vscode.TreeItemCollapsibleState.None
-      ),
-      new EndpointTreeItem(
-        '输入 URL → 自动发现 API → 一键测试漏洞',
-        '$(comment)',
-        vscode.TreeItemCollapsibleState.None
-      ),
+      this.welcomeItem('开始扫描', '$(search)', 'jsApiHunter.scan'),
+      this.welcomeItem('子域名枚举', '$(globe)', 'jsApiHunter.enumerateSubdomains'),
+      this.welcomeItem('分析签名/加密逻辑', '$(key)', 'jsApiHunter.analyzeSignatures'),
+      this.welcomeItem('配置 AI 集成 (MCP)', '$(plug)', 'jsApiHunter.setupMcp'),
+      new EndpointTreeItem('━━━━━━━━━━━━━━━━', '$(dash)', vscode.TreeItemCollapsibleState.None),
+      new EndpointTreeItem('欢迎使用 JS API Hunter', '$(info)', vscode.TreeItemCollapsibleState.None),
+      new EndpointTreeItem('输入 URL → 自动发现 API → 一键测试漏洞', '$(comment)', vscode.TreeItemCollapsibleState.None),
     ];
   }
 
@@ -184,15 +245,12 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
 
   private buildTooltip(ep: EndpointInfo): string {
     let tip = `${ep.method} ${ep.path}`;
-    if (ep.fullUrl) {
-      tip += `\n完整URL: ${ep.fullUrl}`;
-    }
+    if (ep.fullUrl) { tip += `\n完整URL: ${ep.fullUrl}`; }
+    if (ep.baseUrl) { tip += `\nbaseURL: ${ep.baseUrl}`; }
     tip += `\n来源: ${ep.sourceFile}`;
-    if (ep.tags.length > 0) {
-      tip += `\n标签: ${ep.tags.join(', ')}`;
-    }
-    if (ep.parameters.length > 0) {
-      tip += `\n参数: ${ep.parameters.length} 个`;
+    if (ep.tags.length > 0) { tip += `\n标签: ${ep.tags.join(', ')}`; }
+    if (ep.isReachable !== undefined) {
+      tip += `\n验证: ${ep.isReachable ? '可达' : '不可达'} (${ep.verifyStatus || '-'})`;
     }
     return tip;
   }
@@ -210,8 +268,7 @@ export class EndpointTreeItem extends vscode.TreeItem {
     command?: vscode.Command
   ) {
     super(label, collapsibleState);
-    this.iconPath = new vscode.ThemeIcon(icon.replace('$(', '').replace(')', '') as any)
-      || undefined;
+    this.iconPath = new vscode.ThemeIcon(icon.replace('$(', '').replace(')', '') as any) || undefined;
     this.children = children;
     if (command) {
       this.command = command;
