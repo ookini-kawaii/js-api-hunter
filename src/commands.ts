@@ -37,6 +37,8 @@ export function registerCommands(
 
     const cfg = vscode.workspace.getConfiguration('jsApiHunter');
     const verifyEnabled = cfg.get('verifyEndpoints', true);
+    const verifyTimeout = cfg.get<number>('verifyTimeout', 5000);
+    const verifyConcurrency = cfg.get<number>('verifyConcurrency', 5);
     const token = cfg.get<string>('userToken', '').trim() || undefined;
 
     await vscode.window.withProgress({
@@ -91,10 +93,21 @@ export function registerCommands(
 
       // Phase 5: 重放验证
       if (verifyEnabled && scanContext.endpoints.length > 0) {
-        progress.report({ message: '正在重放验证端点...' });
+        progress.report({ message: `正在重放验证端点 (0/${scanContext.endpoints.length})...` });
         scanContext.progress = { phase: 'fuzzing', jsFilesFound: scanContext.jsFiles.length, endpointsFound: scanContext.endpoints.length, message: '重放验证中...' };
         treeProvider.refresh();
-        await verifyEndpoints(scanContext.endpoints, token, 10000);
+        await verifyEndpoints(scanContext.endpoints, {
+          token,
+          timeout: verifyTimeout,
+          concurrency: verifyConcurrency,
+          cancellationToken: tokenCancel,
+          onProgress: (done, total) => {
+            progress.report({ message: `正在重放验证端点 (${done}/${total})...` });
+            if (done % 5 === 0 || done === total) {
+              treeProvider.refresh();
+            }
+          }
+        });
         treeProvider.refresh();
       }
 
@@ -395,12 +408,24 @@ export function registerCommands(
       return;
     }
     const token = await getUserToken();
+    const cfg = vscode.workspace.getConfiguration('jsApiHunter');
+    const verifyTimeout = cfg.get<number>('verifyTimeout', 5000);
+    const verifyConcurrency = cfg.get<number>('verifyConcurrency', 5);
+
     await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
-      title: '重放验证端点'
-    }, async (progress) => {
-      progress.report({ message: '正在探测...' });
-      await verifyEndpoints(scanContext.endpoints, token, 10000);
+      title: '重放验证端点',
+      cancellable: true
+    }, async (progress, tokenCancel) => {
+      await verifyEndpoints(scanContext.endpoints, {
+        token,
+        timeout: verifyTimeout,
+        concurrency: verifyConcurrency,
+        cancellationToken: tokenCancel,
+        onProgress: (done, total) => {
+          progress.report({ message: `正在探测 (${done}/${total})...` });
+        }
+      });
       const reachable = scanContext.endpoints.filter(e => e.isReachable).length;
       vscode.window.showInformationMessage(`验证完成: ${reachable}/${scanContext.endpoints.length} 个端点可达`);
       treeProvider.refresh();

@@ -216,6 +216,16 @@
           "default": true,
           "description": "扫描完成后是否自动对端点做重放验证"
         },
+        "jsApiHunter.verifyTimeout": {
+          "type": "number",
+          "default": 5000,
+          "description": "单个端点重放验证超时时间（毫秒）"
+        },
+        "jsApiHunter.verifyConcurrency": {
+          "type": "number",
+          "default": 5,
+          "description": "重放验证并发数"
+        },
         "jsApiHunter.pathVariants": {
           "type": "boolean",
           "default": true,

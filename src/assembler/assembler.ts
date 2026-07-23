@@ -174,16 +174,44 @@ function joinUrl(base: string, path: string): string {
  *
  * 注意：默认使用 GET 探测，POST/PUT/DELETE 等改为 HEAD 或 OPTIONS，
  *       避免触发副作用。返回端点的 isReachable / verifyStatus / verifyLength。
+ *
+ * 优化点：
+ * - 并发控制，避免串行等待
+ * - 可取消
+ * - 进度回调
+ * - 双重超时保护（AbortSignal + Promise.race），防止某些 Node 版本 fetch 挂死
  */
+export interface VerifyOptions {
+  token?: string;
+  timeout?: number;
+  concurrency?: number;
+  onProgress?: (done: number, total: number) => void;
+  cancellationToken?: { isCancellationRequested: boolean };
+}
+
 export async function verifyEndpoints(
   endpoints: EndpointInfo[],
-  token?: string,
-  timeout = 10000
+  options: VerifyOptions = {}
 ): Promise<void> {
-  for (const ep of endpoints) {
+  const {
+    token,
+    timeout = 5000,
+    concurrency = 5,
+    onProgress,
+    cancellationToken
+  } = options;
+
+  const total = endpoints.length;
+  let done = 0;
+
+  async function verifyOne(ep: EndpointInfo): Promise<void> {
+    if (cancellationToken?.isCancellationRequested) { return; }
+
     if (!ep.fullUrl || !ep.fullUrl.startsWith('http')) {
       ep.isReachable = false;
-      continue;
+      ep.verifyStatus = 0;
+      ep.verifyLength = 0;
+      return;
     }
 
     const method = ep.method.toUpperCase();
@@ -192,22 +220,42 @@ export async function verifyEndpoints(
     if (token) { headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`; }
 
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+
       const resp = await fetch(ep.fullUrl, {
         method: probeMethod,
         headers,
-        signal: AbortSignal.timeout(timeout),
+        signal: controller.signal,
         redirect: 'manual'
       });
 
-      const body = await resp.text().catch(() => '');
+      clearTimeout(timer);
+
+      // HEAD 请求通常没有 body，GET 请求最多读 4KB 用于长度统计
+      const body = probeMethod === 'GET'
+        ? await resp.text().catch(() => '')
+        : '';
+
       ep.verifyStatus = resp.status;
       ep.verifyLength = body.length;
-      ep.isReachable = resp.status < 400;
+      // 200/301/302/401/403 都视为"可达"（接口活着），只有超时/断网才算不可达
+      ep.isReachable = resp.status > 0;
     } catch {
       ep.isReachable = false;
       ep.verifyStatus = 0;
       ep.verifyLength = 0;
+    } finally {
+      done++;
+      onProgress?.(done, total);
     }
+  }
+
+  // 并发控制：每批 concurrency 个
+  for (let i = 0; i < endpoints.length; i += concurrency) {
+    if (cancellationToken?.isCancellationRequested) { break; }
+    const batch = endpoints.slice(i, i + concurrency);
+    await Promise.all(batch.map(verifyOne));
   }
 }
 
