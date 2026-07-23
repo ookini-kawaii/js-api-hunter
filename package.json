@@ -36,7 +36,10 @@
     "auth-bypass",
     "mcp"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:js-api-hunter-endpoints"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
