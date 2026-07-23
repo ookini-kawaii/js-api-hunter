@@ -1,5 +1,7 @@
 import { EndpointInfo, JsFile } from '../types';
 
+import * as vscode from 'vscode';
+
 /**
  * 从 JS 文件中识别 baseURL 并拼装完整请求
  */
@@ -186,7 +188,7 @@ export interface VerifyOptions {
   timeout?: number;
   concurrency?: number;
   onProgress?: (done: number, total: number) => void;
-  cancellationToken?: { isCancellationRequested: boolean };
+  cancellationToken?: vscode.CancellationToken;
 }
 
 export async function verifyEndpoints(
@@ -203,14 +205,29 @@ export async function verifyEndpoints(
 
   const total = endpoints.length;
   let done = 0;
+  let cancelled = false;
+
+  // 取消时立刻设置标记并触发所有 AbortController
+  const abortController = new AbortController();
+  const disposables: vscode.Disposable[] = [];
+  if (cancellationToken) {
+    disposables.push(
+      cancellationToken.onCancellationRequested(() => {
+        cancelled = true;
+        abortController.abort();
+      })
+    );
+  }
 
   async function verifyOne(ep: EndpointInfo): Promise<void> {
-    if (cancellationToken?.isCancellationRequested) { return; }
+    if (cancelled || abortController.signal.aborted) { return; }
 
     if (!ep.fullUrl || !ep.fullUrl.startsWith('http')) {
       ep.isReachable = false;
       ep.verifyStatus = 0;
       ep.verifyLength = 0;
+      done++;
+      onProgress?.(done, total);
       return;
     }
 
@@ -219,43 +236,53 @@ export async function verifyEndpoints(
     const headers: Record<string, string> = { 'User-Agent': 'Mozilla/5.0' };
     if (token) { headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`; }
 
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeout);
+    // 每个请求独立的超时控制器
+    const requestController = new AbortController();
+    const timer = setTimeout(() => requestController.abort(), timeout);
 
+    // 取消信号和超时信号合并
+    const onAbort = () => requestController.abort();
+    abortController.signal.addEventListener('abort', onAbort);
+
+    try {
       const resp = await fetch(ep.fullUrl, {
         method: probeMethod,
         headers,
-        signal: controller.signal,
+        signal: requestController.signal,
         redirect: 'manual'
       });
 
       clearTimeout(timer);
 
-      // HEAD 请求通常没有 body，GET 请求最多读 4KB 用于长度统计
+      // HEAD 请求通常没有 body，GET 请求读 body 用于长度统计
       const body = probeMethod === 'GET'
         ? await resp.text().catch(() => '')
         : '';
 
       ep.verifyStatus = resp.status;
       ep.verifyLength = body.length;
-      // 200/301/302/401/403 都视为"可达"（接口活着），只有超时/断网才算不可达
       ep.isReachable = resp.status > 0;
     } catch {
       ep.isReachable = false;
       ep.verifyStatus = 0;
       ep.verifyLength = 0;
     } finally {
+      clearTimeout(timer);
+      abortController.signal.removeEventListener('abort', onAbort);
       done++;
       onProgress?.(done, total);
     }
   }
 
-  // 并发控制：每批 concurrency 个
-  for (let i = 0; i < endpoints.length; i += concurrency) {
-    if (cancellationToken?.isCancellationRequested) { break; }
-    const batch = endpoints.slice(i, i + concurrency);
-    await Promise.all(batch.map(verifyOne));
+  try {
+    // 并发控制：每批 concurrency 个
+    for (let i = 0; i < endpoints.length; i += concurrency) {
+      if (cancelled || abortController.signal.aborted) { break; }
+      const batch = endpoints.slice(i, i + concurrency);
+      await Promise.all(batch.map(verifyOne));
+    }
+  } finally {
+    disposables.forEach(d => d.dispose());
   }
 }
 

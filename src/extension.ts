@@ -28,7 +28,7 @@ export function activate(context: vscode.ExtensionContext) {
   // 状态栏
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command = 'jsApiHunter.scan';
-  statusBar.text = '$(bug) JS API Hunter';
+  statusBar.text = '$(search) JS API Hunter';
   statusBar.tooltip = '点击开始扫描';
   statusBar.show();
 
