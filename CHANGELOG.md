@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 (2026-07-24)
+
+### 修复
+- **修复重放验证端点卡住问题**：`verifyEndpoints` 改为并发探测（默认 5 并发），单个端点超时从 10 秒降至 5 秒，并添加 `AbortController` 双重超时保护
+- **修复取消不生效问题**：重放验证期间点击取消后，使用 `vscode.CancellationToken + AbortController` 立即中断所有进行中的 `fetch` 请求
+
+### 改进
+- **图标更换**：左侧活动栏图标从 `$(bug)` 改为 `$(search)`，状态栏同步更新
+- **版本徽章**：README 版本徽章改为 GitHub 动态徽章，自动跟随 `package.json` 版本
+
+### 配置
+- 新增 `jsApiHunter.verifyTimeout`：单个端点验证超时（默认 5000ms）
+- 新增 `jsApiHunter.verifyConcurrency`：验证并发数（默认 5）
+
 ## 0.3.0 (2026-07-23)
 
 根据《JS 接口挖洞实战教程 —— 从入门到横向 Fuzz》PDF 进行的能力补齐：

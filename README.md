@@ -2,7 +2,7 @@
 
 > 一个 VS Code 扩展，将 JS 接口挖洞的七步手工作坊升级为一键自动化流水线。
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](https://github.com/ookini-kawaii/js-api-hunter)
+[![Version](https://img.shields.io/github/package-json/v/ookini-kawaii/js-api-hunter)](https://github.com/ookini-kawaii/js-api-hunter)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.85.0-blue)](https://code.visualstudio.com/)
 
