@@ -46,6 +46,8 @@ export interface EndpointInfo {
   verifyStatus?: number;
   /** 验证请求返回体长度 */
   verifyLength?: number;
+  /** 端点分类：api / static / other（用于过滤静态资源） */
+  endpointCategory?: EndpointCategory;
 }
 
 /** 敏感信息发现 */
@@ -104,6 +106,14 @@ export interface ScanContext {
   subdomains: SubdomainInfo[];
   progress: ScanProgress;
   fuzzResults: FuzzResult[];
+  /** 端点过滤统计 */
+  filterStats?: {
+    total: number;
+    kept: number;
+    filtered: number;
+    /** 被过滤的端点简要列表 */
+    filteredSummary: string[];
+  };
 }
 
 /** 测试类型 */
@@ -156,6 +166,8 @@ export interface FuzzConfig {
   subdomains: string[];
   /** 用户提供的测试 Token，带/不带 Token 两个版本都会测 */
   userToken?: string;
+  /** 用户提供的 Cookie 字符串，如 "session=abc; csrf=xyz" */
+  cookie?: string;
   /** 第二个账号 Token，用于 IDOR 两账号对比 */
   comparisonToken?: string;
   testAuthBypass: boolean;
@@ -182,6 +194,9 @@ export interface FuzzProgress {
   completed: number;
   message: string;
 }
+
+/** 端点分类 */
+export type EndpointCategory = 'api' | 'static' | 'other';
 
 /** 报告格式 */
 export type ReportFormat = 'json' | 'markdown' | 'html' | 'csv' | 'src';

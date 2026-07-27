@@ -64,6 +64,24 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
     const ctx = this.scanContext;
     const items: EndpointTreeItem[] = [];
 
+    // 显示过滤统计
+    if (ctx.filterStats && ctx.filterStats.filtered > 0) {
+      const pct = ctx.filterStats.total > 0
+        ? Math.round((ctx.filterStats.filtered / ctx.filterStats.total) * 100)
+        : 0;
+      const filterItem = new EndpointTreeItem(
+        `已过滤 ${ctx.filterStats.filtered} 个非 API 端点（${pct}%），保留 ${ctx.filterStats.kept} 个`,
+        '$(filter)',
+        vscode.TreeItemCollapsibleState.Collapsed,
+        ctx.filterStats.filteredSummary.slice(0, 30).map(path =>
+          new EndpointTreeItem(path, '$(circle-slash)', vscode.TreeItemCollapsibleState.None)
+        )
+      );
+      filterItem.contextValue = 'filter-info';
+      filterItem.tooltip = '自动过滤的静态资源/非 API 端点。可在设置中关闭过滤（jsApiHunter.filterEndpoints）或添加保留关键词。';
+      items.push(filterItem);
+    }
+
     // 端点分类
     const endpointCategory = new EndpointTreeItem(
       `API 端点 (${ctx.endpoints.length})`,
@@ -215,12 +233,14 @@ export class EndpointTreeProvider implements vscode.TreeDataProvider<EndpointTre
   private buildWelcomeView(): EndpointTreeItem[] {
     return [
       this.welcomeItem('开始扫描', '$(search)', 'jsApiHunter.scan'),
+      this.welcomeItem('启动被动代理', '$(radio-tower)', 'jsApiHunter.startProxy'),
       this.welcomeItem('子域名枚举', '$(globe)', 'jsApiHunter.enumerateSubdomains'),
       this.welcomeItem('分析签名/加密逻辑', '$(key)', 'jsApiHunter.analyzeSignatures'),
       this.welcomeItem('配置 AI 集成 (MCP)', '$(plug)', 'jsApiHunter.setupMcp'),
       new EndpointTreeItem('━━━━━━━━━━━━━━━━', '$(dash)', vscode.TreeItemCollapsibleState.None),
       new EndpointTreeItem('欢迎使用 JS API Hunter', '$(info)', vscode.TreeItemCollapsibleState.None),
       new EndpointTreeItem('输入 URL → 自动发现 API → 一键测试漏洞', '$(comment)', vscode.TreeItemCollapsibleState.None),
+      new EndpointTreeItem('被动代理：浏览器挂代理 → 自动收集 JS', '$(comment)', vscode.TreeItemCollapsibleState.None),
     ];
   }
 

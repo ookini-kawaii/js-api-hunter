@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.2 (2026-07-27)
+
+### 新增
+- **端点智能过滤**：扫描后自动去重、排除静态资源（.js/.css/.png 等）和非 API 端点（/dist/、/assets/、/node_modules/ 等），从 3000+ 噪声端点大幅缩减至真正有价值的 API 接口。可在设置中关闭或自定义保留/排除关键词。
+- **Cookie 认证支持**：新增 `jsApiHunter.userCookie` 配置项和 Cookie 输入弹窗，支持从浏览器 DevTools 复制 Cookie 字符串进行认证测试。Fuzz 时自动附加 Cookie 头，兼容 Cookie-based 鉴权的 Web 应用。
+- **被动代理模式**：启动本地 HTTP/HTTPS 代理服务器，捕获浏览器流量并自动收集 JS 文件。在浏览器设置代理为 `localhost:8080` 后浏览目标网站即可自动收集，无需手动输入 URL。
+
+### 改进
+- 欢迎面板新增 "启动被动代理" 快捷入口
+- 状态栏支持代理运行状态实时显示（JS 收集计数）
+- TreeView 显示过滤统计和摘要（已过滤 X 个非 API 端点）
+- `getUserAuth` 支持 Token/Cookie/跳过 三种认证方式弹窗选择
+
+### 配置
+- 新增 `jsApiHunter.filterEndpoints`：是否启用端点智能过滤（默认开启）
+- 新增 `jsApiHunter.filterKeepKeywords`：额外保留的路径关键词
+- 新增 `jsApiHunter.filterExcludeKeywords`：额外排除的路径关键词
+- 新增 `jsApiHunter.userCookie`：默认测试 Cookie 字符串
+- 新增 `jsApiHunter.proxyPort`：被动代理默认端口（默认 8080）
+
 ## 0.3.1 (2026-07-24)
 
 ### 修复

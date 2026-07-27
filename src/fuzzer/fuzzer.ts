@@ -184,7 +184,7 @@ export async function runHorizontalFuzz(
 
 /** 带 Token 基准请求 */
 async function fetchBaseline(endpoint: EndpointInfo, config: FuzzConfig): Promise<{ status: number; body: string; length: number }> {
-  const headers = buildHeaders(config.userToken);
+  const headers = buildHeaders(config.userToken, config.cookie);
   try {
     const resp = await fetch(endpoint.fullUrl || endpoint.url, {
       method: endpoint.method,
@@ -209,7 +209,7 @@ async function testAuthBypass(
   // 先测带 Token 基准
   results.push(await singleRequest(
     endpoint,
-    buildHeaders(config.userToken),
+    buildHeaders(config.userToken, config.cookie),
     config,
     'auth_bypass',
     '带 Token 基准请求',
@@ -218,7 +218,7 @@ async function testAuthBypass(
 
   // 再测各种绕过 header
   for (const removeHeaders of payloads.AUTH_BYPASS_HEADERS) {
-    const headers = { ...buildHeaders(config.userToken), ...removeHeaders };
+    const headers = { ...buildHeaders(config.userToken, config.cookie), ...removeHeaders };
     const desc = Object.keys(removeHeaders).length === 0
       ? '移除所有认证头（裸奔）'
       : `篡改认证头: ${JSON.stringify(removeHeaders)}`;
@@ -245,7 +245,7 @@ async function testIdor(
 
     const result = await singleRequest(
       { ...endpoint, fullUrl: modifiedUrl, path: modifiedUrl },
-      buildHeaders(config.userToken),
+      buildHeaders(config.userToken, config.cookie),
       config,
       'idor',
       `IDOR ${name}: ${endpoint.path} → ${modifiedUrl}`,
@@ -286,7 +286,7 @@ async function testIdorBody(
       const testParams = { ...params, [paramName]: newValue };
       const result = await requestWithParams(
         endpoint,
-        buildHeaders(config.userToken),
+        buildHeaders(config.userToken, config.cookie),
         testParams,
         config,
         'idor_body',
@@ -340,7 +340,7 @@ async function testParamInjection(
     const testUrl = appendQueryParam(endpoint.fullUrl || endpoint.url, 'test', payload.value);
     const result = await singleRequest(
       { ...endpoint, fullUrl: testUrl },
-      buildHeaders(config.userToken),
+      buildHeaders(config.userToken, config.cookie),
       config,
       'param_inject',
       `参数注入: ${payload.description}`,
@@ -371,7 +371,7 @@ async function testSqlInjection(
     const startTime = Date.now();
     const result = await singleRequest(
       { ...endpoint, fullUrl: testUrl },
-      buildHeaders(config.userToken),
+      buildHeaders(config.userToken, config.cookie),
       config,
       'sql_inject',
       `SQL 注入: ${payload.description}`,
@@ -413,7 +413,7 @@ async function testNoSqlInjection(
       const testUrl = appendQueryParam(endpoint.fullUrl || endpoint.url, param, payload.value);
       const result = await singleRequest(
         { ...endpoint, fullUrl: testUrl },
-        buildHeaders(config.userToken),
+        buildHeaders(config.userToken, config.cookie),
         config,
         'nosql_inject',
         `NoSQL 注入: ${payload.description} (param=${param})`,
@@ -452,7 +452,7 @@ async function testSsrf(
       const testUrl = appendQueryParam(endpoint.fullUrl || endpoint.url, param, payload.value);
       const result = await singleRequest(
         { ...endpoint, fullUrl: testUrl },
-        buildHeaders(config.userToken),
+        buildHeaders(config.userToken, config.cookie),
         config,
         'ssrf',
         `SSRF ${payload.description}: param=${param}`,
@@ -492,7 +492,7 @@ async function testMassAssignment(
     const testParams = { ...baseParams, [payload.field]: payload.value };
     const result = await requestWithParams(
       endpoint,
-      buildHeaders(config.userToken),
+      buildHeaders(config.userToken, config.cookie),
       testParams,
       config,
       'mass_assignment',
@@ -526,7 +526,7 @@ async function testBusinessLogic(
     const testParams = { ...baseParams, [payload.field]: payload.value };
     const result = await requestWithParams(
       endpoint,
-      buildHeaders(config.userToken),
+      buildHeaders(config.userToken, config.cookie),
       testParams,
       config,
       'business_logic',
@@ -561,7 +561,7 @@ async function testInterfaceAbuse(
       const testUrl = appendQueryParam(endpoint.fullUrl || endpoint.url, param, payload.value);
       const result = await singleRequest(
         { ...endpoint, fullUrl: testUrl },
-        buildHeaders(config.userToken),
+        buildHeaders(config.userToken, config.cookie),
         config,
         'interface_abuse',
         `接口滥用: ${payload.description} (param=${param})`,
@@ -598,7 +598,7 @@ async function testRaceCondition(
       Array.from({ length: concurrentCount }, () =>
         fetch(endpoint.fullUrl || endpoint.url, {
           method: endpoint.method,
-          headers: buildHeaders(config.userToken),
+          headers: buildHeaders(config.userToken, config.cookie),
           signal: AbortSignal.timeout(config.timeout)
         }).then(r => r.text().catch(() => '')).catch(() => '')
       )
@@ -640,7 +640,7 @@ async function testSignBypass(
 
   // 1. 删除签名头
   for (const signHeaders of payloads.SIGN_BYPASS_HEADERS) {
-    const headers = { ...buildHeaders(config.userToken) };
+    const headers = { ...buildHeaders(config.userToken, config.cookie) };
     for (const [k] of Object.entries(signHeaders)) {
       delete headers[k];
     }
@@ -670,7 +670,7 @@ async function testSignBypass(
 
     const result = await singleRequest(
       { ...endpoint, fullUrl: testUrl },
-      buildHeaders(config.userToken),
+      buildHeaders(config.userToken, config.cookie),
       config,
       'sign_bypass',
       `签名绕过: 删除 URL 参数 ${param}`,
@@ -830,10 +830,13 @@ function judgeVulnerable(
 }
 
 /** 构建请求头 */
-function buildHeaders(token?: string): Record<string, string> {
+function buildHeaders(token?: string, cookie?: string): Record<string, string> {
   const headers: Record<string, string> = { 'User-Agent': 'Mozilla/5.0' };
   if (token) {
     headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+  }
+  if (cookie) {
+    headers['Cookie'] = cookie;
   }
   return headers;
 }

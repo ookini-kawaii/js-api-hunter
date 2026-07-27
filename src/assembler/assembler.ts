@@ -185,6 +185,7 @@ function joinUrl(base: string, path: string): string {
  */
 export interface VerifyOptions {
   token?: string;
+  cookie?: string;
   timeout?: number;
   concurrency?: number;
   onProgress?: (done: number, total: number) => void;
@@ -197,6 +198,7 @@ export async function verifyEndpoints(
 ): Promise<void> {
   const {
     token,
+    cookie,
     timeout = 5000,
     concurrency = 5,
     onProgress,
@@ -235,6 +237,7 @@ export async function verifyEndpoints(
     const probeMethod = method === 'GET' ? 'GET' : 'HEAD';
     const headers: Record<string, string> = { 'User-Agent': 'Mozilla/5.0' };
     if (token) { headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`; }
+    if (cookie) { headers['Cookie'] = cookie; }
 
     // 每个请求独立的超时控制器
     const requestController = new AbortController();

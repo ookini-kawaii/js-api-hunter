@@ -2,13 +2,14 @@ import * as vscode from 'vscode';
 import { ScanContext, EndpointInfo, FuzzConfig, FuzzResult, ReportFormat } from './types';
 import { EndpointTreeProvider } from './tree/endpointTree';
 import { collectJsFiles } from './collector/collector';
-import { parseEndpoints } from './parser/parser';
+import { parseEndpoints, filterEndpoints, DEFAULT_FILTER_CONFIG } from './parser/parser';
 import { assembleRequests, verifyEndpoints, toCurl, toPythonRequests } from './assembler/assembler';
 import { runFuzz, runHorizontalFuzz } from './fuzzer/fuzzer';
 import { FuzzerPanel } from './webview/fuzzerPanel';
 import { analyzeSignatures, generateConsoleScript } from './signer/signer';
 import { extractSecrets } from './secrets/secrets';
 import { enumerateSubdomains, extractRootDomain, DEFAULT_SUBDOMAIN_PREFIXES } from './recon/subdomains';
+import { startProxyServer, stopProxyServer, getProxyServer } from './proxy/proxyServer';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
@@ -40,6 +41,7 @@ export function registerCommands(
     const verifyTimeout = cfg.get<number>('verifyTimeout', 5000);
     const verifyConcurrency = cfg.get<number>('verifyConcurrency', 5);
     const token = cfg.get<string>('userToken', '').trim() || undefined;
+    const cookie = cfg.get<string>('userCookie', '').trim() || undefined;
 
     await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
@@ -70,8 +72,27 @@ export function registerCommands(
       scanContext.progress = { phase: 'parsing', jsFilesFound: scanContext.jsFiles.length, endpointsFound: 0, message: '解析端点中...' };
       treeProvider.refresh();
 
-      scanContext.endpoints = parseEndpoints(scanContext.jsFiles);
-      scanContext.progress.endpointsFound = scanContext.endpoints.length;
+      const rawEndpoints = parseEndpoints(scanContext.jsFiles);
+      scanContext.progress.endpointsFound = rawEndpoints.length;
+
+      // Phase 2.5: 智能过滤端点（去重 + 排除静态资源）
+      progress.report({ message: `正在过滤端点（共 ${rawEndpoints.length} 个）...` });
+      const filterCfg = vscode.workspace.getConfiguration('jsApiHunter');
+      const filterEnabled = filterCfg.get<boolean>('filterEndpoints', true);
+      const { kept, filtered } = filterEndpoints(rawEndpoints, {
+        ...DEFAULT_FILTER_CONFIG,
+        enabled: filterEnabled,
+        extraKeepKeywords: filterCfg.get<string[]>('filterKeepKeywords', []),
+        extraExcludeKeywords: filterCfg.get<string[]>('filterExcludeKeywords', []),
+      });
+      scanContext.endpoints = kept;
+      scanContext.filterStats = {
+        total: rawEndpoints.length,
+        kept: kept.length,
+        filtered: filtered.length,
+        filteredSummary: filtered.slice(0, 20).map(f => `${f.method} ${f.path}`)
+      };
+      scanContext.progress.endpointsFound = kept.length;
       treeProvider.refresh();
 
       if (tokenCancel.isCancellationRequested) { return; }
@@ -98,6 +119,7 @@ export function registerCommands(
         treeProvider.refresh();
         await verifyEndpoints(scanContext.endpoints, {
           token,
+          cookie,
           timeout: verifyTimeout,
           concurrency: verifyConcurrency,
           cancellationToken: tokenCancel,
@@ -117,8 +139,11 @@ export function registerCommands(
       treeProvider.refresh();
 
       const reachable = scanContext.endpoints.filter(e => e.isReachable).length;
+      const filterMsg = scanContext.filterStats
+        ? `（已过滤 ${scanContext.filterStats.filtered} 个非 API 端点）`
+        : '';
       vscode.window.showInformationMessage(
-        `扫描完成: 发现 ${scanContext.endpoints.length} 个端点、` +
+        `扫描完成: 发现 ${scanContext.endpoints.length} 个端点${filterMsg}、` +
         `${scanContext.secrets.length} 条敏感信息、` +
         `${reachable} 个端点可验证`
       );
@@ -223,9 +248,9 @@ export function registerCommands(
       endpoint = picked.endpoint;
     }
 
-    const token = await getUserToken();
+    const auth = await getUserAuth();
     const comparisonToken = await getComparisonToken();
-    const config = buildFuzzConfig(token, comparisonToken);
+    const config = buildFuzzConfig(auth.token, auth.cookie, comparisonToken);
     const panel = FuzzerPanel.createOrShow();
 
     const userSubdomains = await vscode.window.showInputBox({
@@ -293,8 +318,8 @@ export function registerCommands(
       subdomains = subdomainInput.split(',').map(s => s.trim()).filter(Boolean);
     }
 
-    const token = await getUserToken();
-    const config = buildFuzzConfig(token);
+    const auth = await getUserAuth();
+    const config = buildFuzzConfig(auth.token, auth.cookie);
     config.testHorizontal = true;
     config.pathVariants = vscode.workspace.getConfiguration('jsApiHunter').get('pathVariants', true);
 
@@ -407,7 +432,7 @@ export function registerCommands(
       vscode.window.showWarningMessage('请先扫描获取端点');
       return;
     }
-    const token = await getUserToken();
+    const auth = await getUserAuth();
     const cfg = vscode.workspace.getConfiguration('jsApiHunter');
     const verifyTimeout = cfg.get<number>('verifyTimeout', 5000);
     const verifyConcurrency = cfg.get<number>('verifyConcurrency', 5);
@@ -418,7 +443,8 @@ export function registerCommands(
       cancellable: true
     }, async (progress, tokenCancel) => {
       await verifyEndpoints(scanContext.endpoints, {
-        token,
+        token: auth.token,
+        cookie: auth.cookie,
         timeout: verifyTimeout,
         concurrency: verifyConcurrency,
         cancellationToken: tokenCancel,
@@ -432,7 +458,69 @@ export function registerCommands(
     });
   });
 
-  // ========== 11. MCP 配置引导 ==========
+  // ========== 12. 被动代理模式 ==========
+  let proxyStatusBar: vscode.StatusBarItem | undefined;
+
+  const startProxyCmd = vscode.commands.registerCommand('jsApiHunter.startProxy', async () => {
+    const cfg = vscode.workspace.getConfiguration('jsApiHunter');
+    const defaultPort = String(cfg.get<number>('proxyPort', 8080));
+    const portInput = await vscode.window.showInputBox({
+      prompt: '输入代理端口',
+      value: defaultPort,
+      placeHolder: defaultPort,
+      validateInput: (v) => isNaN(Number(v)) ? '请输入有效端口号' : null
+    });
+    if (!portInput) { return; }
+    const port = parseInt(portInput);
+
+    try {
+      await startProxyServer(port, (jsFile) => {
+        scanContext.jsFiles.push(jsFile);
+        if (proxyStatusBar) {
+          proxyStatusBar.text = `$(radio-tower) 代理运行中 :${port} | JS: ${scanContext.jsFiles.length}`;
+        }
+      });
+
+      proxyStatusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 101);
+      proxyStatusBar.command = 'jsApiHunter.stopProxy';
+      proxyStatusBar.text = `$(radio-tower) 代理运行中 :${port} | JS: ${scanContext.jsFiles.length}`;
+      proxyStatusBar.tooltip = `被动代理已启动，端口 ${port}。点击停止。\n在浏览器设置代理为 localhost:${port} 后浏览目标网站，自动收集 JS 文件。`;
+      proxyStatusBar.show();
+      context.subscriptions.push(proxyStatusBar);
+
+      await vscode.window.showInformationMessage(
+        `被动代理已启动: localhost:${port}\n请在浏览器设置 HTTP 代理为 localhost:${port}，然后浏览目标网站。\n收集到的 JS 文件会自动加入扫描结果。`,
+        '停止代理'
+      ).then(choice => {
+        if (choice === '停止代理') {
+          vscode.commands.executeCommand('jsApiHunter.stopProxy');
+        }
+      });
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`代理启动失败: ${err.message}`);
+    }
+  });
+
+  const stopProxyCmd = vscode.commands.registerCommand('jsApiHunter.stopProxy', () => {
+    stopProxyServer();
+    if (proxyStatusBar) {
+      proxyStatusBar.hide();
+      proxyStatusBar.dispose();
+      proxyStatusBar = undefined;
+    }
+    vscode.window.showInformationMessage('被动代理已停止');
+  });
+
+  const proxyStatusCmd = vscode.commands.registerCommand('jsApiHunter.proxyStatus', () => {
+    const server = getProxyServer();
+    if (server) {
+      vscode.window.showInformationMessage(
+        `代理运行中\n端口: ${server.port}\n收集 JS: ${scanContext.jsFiles.length} 个\n请在浏览器设置代理 localhost:${server.port}`
+      );
+    } else {
+      vscode.window.showInformationMessage('代理未启动。点击侧边栏 "启动被动代理" 开始。');
+    }
+  });
   const mcpSetupCmd = vscode.commands.registerCommand('jsApiHunter.setupMcp', () => {
     const mcpConfig = {
       mcpServers: {
@@ -481,22 +569,55 @@ ${configText}
   context.subscriptions.push(
     scanCmd, refreshCmd, clearCmd, detailCmd, copyCmd, copyCurlCmd, copyPythonCmd,
     exportCmd, fuzzCmd, horizontalFuzzCmd, signAnalyzeCmd, enumSubdomainsCmd,
-    showSecretsCmd, verifyCmd, mcpSetupCmd
+    showSecretsCmd, verifyCmd, mcpSetupCmd,
+    startProxyCmd, stopProxyCmd, proxyStatusCmd
   );
 }
 
-/** 获取用户 Token：优先配置，其次弹窗输入 */
-async function getUserToken(): Promise<string | undefined> {
+/** 获取用户认证凭据：优先配置，其次弹窗输入（Token + Cookie） */
+async function getUserAuth(): Promise<{ token?: string; cookie?: string }> {
   const cfg = vscode.workspace.getConfiguration('jsApiHunter');
-  const configured = cfg.get<string>('userToken', '').trim();
-  if (configured) { return configured; }
+  const configuredToken = cfg.get<string>('userToken', '').trim();
+  const configuredCookie = cfg.get<string>('userCookie', '').trim();
 
-  const input = await vscode.window.showInputBox({
-    prompt: '输入测试 Token（Bearer xxx，留空则测试裸奔）',
-    placeHolder: 'Bearer eyJhbGciOiJIUzI1NiIs...',
-    password: true
-  });
-  return input?.trim() || undefined;
+  if (configuredToken || configuredCookie) {
+    return { token: configuredToken || undefined, cookie: configuredCookie || undefined };
+  }
+
+  // 弹窗选择认证方式
+  const authType = await vscode.window.showQuickPick([
+    { label: 'Bearer Token', description: 'Authorization: Bearer xxx', value: 'token' },
+    { label: 'Cookie', description: 'Cookie: session=abc; csrf=xyz', value: 'cookie' },
+    { label: '跳过（测试裸奔）', description: '不发送任何认证信息', value: 'skip' }
+  ], { placeHolder: '选择认证方式' });
+
+  if (!authType || authType.value === 'skip') { return {}; }
+
+  if (authType.value === 'token') {
+    const input = await vscode.window.showInputBox({
+      prompt: '输入 Bearer Token',
+      placeHolder: 'Bearer eyJhbGciOiJIUzI1NiIs...',
+      password: true
+    });
+    return { token: input?.trim() || undefined };
+  }
+
+  if (authType.value === 'cookie') {
+    const input = await vscode.window.showInputBox({
+      prompt: '输入 Cookie 字符串（从浏览器 DevTools > Application > Cookies 复制）',
+      placeHolder: 'session=abc123; csrf=xyz456; user_id=789',
+      password: true
+    });
+    return { cookie: input?.trim() || undefined };
+  }
+
+  return {};
+}
+
+/** 获取用户 Token：兼容旧版调用，等同于 getUserAuth().token */
+async function getUserToken(): Promise<string | undefined> {
+  const auth = await getUserAuth();
+  return auth.token;
 }
 
 /** 获取第二个账号 Token，用于 IDOR 两账号对比 */
@@ -510,13 +631,14 @@ async function getComparisonToken(): Promise<string | undefined> {
 }
 
 /** 从 VS Code 配置构建 FuzzConfig */
-function buildFuzzConfig(token?: string, comparisonToken?: string): FuzzConfig {
+function buildFuzzConfig(token?: string, cookie?: string, comparisonToken?: string): FuzzConfig {
   const cfg = vscode.workspace.getConfiguration('jsApiHunter');
   return {
     concurrentRequests: cfg.get('concurrentRequests', 10),
     timeout: cfg.get('timeout', 30000),
     subdomains: [],
     userToken: token,
+    cookie,
     comparisonToken,
     testAuthBypass: cfg.get('testAuthBypass', true),
     testIdor: cfg.get('testIdor', true),

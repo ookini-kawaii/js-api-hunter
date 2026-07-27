@@ -1,10 +1,31 @@
 import * as acorn from 'acorn';
 import * as walk from 'acorn-walk';
-import { EndpointInfo, JsFile, RiskLevel } from '../types';
+import { EndpointInfo, EndpointCategory, JsFile, RiskLevel } from '../types';
+
+/**
+ * 端点过滤配置
+ */
+export interface FilterConfig {
+  /** 是否启用智能过滤 */
+  enabled: boolean;
+  /** 保留的端点分类 */
+  keepCategories: EndpointCategory[];
+  /** 额外保留的路径关键词 */
+  extraKeepKeywords: string[];
+  /** 额外排除的路径关键词 */
+  extraExcludeKeywords: string[];
+}
+
+/** 默认过滤配置：保留 API 类端点，排除静态资源和其他 */
+export const DEFAULT_FILTER_CONFIG: FilterConfig = {
+  enabled: true,
+  keepCategories: ['api'],
+  extraKeepKeywords: [],
+  extraExcludeKeywords: []
+};
 
 /**
  * 从 JS 文件中解析 API 端点
- * 使用 acorn AST 解析 + 正则辅助提取
  */
 export function parseEndpoints(jsFiles: JsFile[]): EndpointInfo[] {
   const endpoints: EndpointInfo[] = [];
@@ -23,6 +44,163 @@ export function parseEndpoints(jsFiles: JsFile[]): EndpointInfo[] {
 
   // 去重 + 排序
   return sortEndpoints(endpoints);
+}
+
+/**
+ * 智能过滤端点：去重 + 排除静态资源 + 只保留 API 特征端点
+ * 返回 { kept, filtered }，kept 是过滤后的端点列表
+ */
+export function filterEndpoints(
+  endpoints: EndpointInfo[],
+  config: FilterConfig = DEFAULT_FILTER_CONFIG
+): { kept: EndpointInfo[]; filtered: EndpointInfo[] } {
+  if (!config.enabled) {
+    return { kept: endpoints, filtered: [] };
+  }
+
+  // 第一步：合并重复（同 method + path，保留第一个）
+  const seen = new Map<string, EndpointInfo>();
+  for (const ep of endpoints) {
+    const key = `${ep.method.toUpperCase()}:${ep.path}`;
+    if (!seen.has(key)) {
+      seen.set(key, ep);
+    }
+  }
+  const deduped = Array.from(seen.values());
+
+  // 第二步：分类 + 过滤
+  const kept: EndpointInfo[] = [];
+  const filtered: EndpointInfo[] = [];
+
+  for (const ep of deduped) {
+    classifyEndpoint(ep, config);
+
+    // 检查额外排除关键词
+    if (config.extraExcludeKeywords.length > 0) {
+      const shouldExclude = config.extraExcludeKeywords.some(kw =>
+        ep.path.toLowerCase().includes(kw.toLowerCase())
+      );
+      if (shouldExclude) {
+        ep.endpointCategory = 'static';
+        filtered.push(ep);
+        continue;
+      }
+    }
+
+    // 检查额外保留关键词（即使分类是 static/other 也保留）
+    if (config.extraKeepKeywords.length > 0) {
+      const shouldKeep = config.extraKeepKeywords.some(kw =>
+        ep.path.toLowerCase().includes(kw.toLowerCase())
+      );
+      if (shouldKeep) {
+        ep.endpointCategory = 'api';
+        kept.push(ep);
+        continue;
+      }
+    }
+
+    if (config.keepCategories.includes(ep.endpointCategory || 'api')) {
+      kept.push(ep);
+    } else {
+      filtered.push(ep);
+    }
+  }
+
+  return { kept: sortEndpoints(kept), filtered };
+}
+
+/**
+ * 对端点进行分类：api / static / other
+ */
+function classifyEndpoint(ep: EndpointInfo, config: FilterConfig): void {
+  const lower = ep.path.toLowerCase();
+
+  // 静态资源明显特征
+  const staticExtensions = [
+    '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+    '.mp4', '.webm', '.mp3', '.wav', '.ogg',
+    '.pdf', '.zip', '.tar', '.gz', '.rar',
+    '.map', '.json'
+  ];
+  if (staticExtensions.some(ext => lower.endsWith(ext))) {
+    ep.endpointCategory = 'static';
+    return;
+  }
+
+  // 打包产物：带 hash 的文件名
+  if (/\/(chunk|bundle|vendor|runtime|polyfill|common)[-_\.]/.test(lower)) {
+    ep.endpointCategory = 'other';
+    return;
+  }
+
+  // 模块路径（无 API 特征）
+  const nonApiPatterns = [
+    /^\/node_modules\//,
+    /^\/@/,
+    /\/dist\//,
+    /\/build\//,
+    /\/public\//,
+    /\/assets\//,
+    /\/static\//,
+    /\/vendor\//,
+    /\/lib\//,
+    /\/i18n\//,
+    /\/locale\//,
+    /\/lang\//,
+    /\/theme\//,
+    /\/style\//,
+    /\/css\//,
+    /\/img\//,
+    /\/images\//,
+    /\/icon\//,
+    /\/font\//,
+    /\/logo(\/|$|\.)/,
+    /\/favicon(\/|$|\.)/,
+    /\/manifest(\/|$|\.)/,
+    /\/robots(\/|$|\.)/,
+    /\/sitemap(\/|$|\.)/,
+  ];
+  if (nonApiPatterns.some(p => p.test(lower))) {
+    ep.endpointCategory = 'static';
+    return;
+  }
+
+  // API 特征关键词
+  const apiKeywords = [
+    '/api', '/v1/', '/v2/', '/v3/', '/v4/', '/v5/',
+    '/rest/', '/graphql', '/ajax', '/rpc',
+    '/login', '/logout', '/register', '/signup', '/signin',
+    '/user', '/users', '/profile', '/account',
+    '/admin', '/manage', '/dashboard',
+    '/order', '/pay', '/cart', '/checkout',
+    '/search', '/query', '/list',
+    '/upload', '/download', '/export',
+    '/config', '/setting', '/settings',
+    '/auth', '/token', '/session', '/oauth',
+    '/webhook', '/callback', '/notify',
+    '/health', '/status', '/ping',
+    '/cron', '/job', '/task',
+    '/message', '/chat', '/comment',
+    '/file', '/image', '/media',
+    '/data', '/stats', '/analytics',
+    '/metric', '/log',
+  ];
+  if (apiKeywords.some(kw => lower.includes(kw))) {
+    ep.endpointCategory = 'api';
+    return;
+  }
+
+  // 路径看起来像 API 路径（深层路径、含参数等）
+  const pathSegments = ep.path.split('/').filter(Boolean);
+  // 单段路径且不是 api 相关 -> 可能是静态路由
+  if (pathSegments.length <= 1) {
+    ep.endpointCategory = 'other';
+    return;
+  }
+
+  // 默认归类为 other
+  ep.endpointCategory = 'other';
 }
 
 function extractFromFile(file: JsFile): EndpointInfo[] {
