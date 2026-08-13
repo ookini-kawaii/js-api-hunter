@@ -1,0 +1,24 @@
+name: 功能建议
+description: 提议新的发现、测试、报告或交互能力
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景
+      description: 描述要解决的真实问题。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+      description: 说明期望行为和兼容性影响。
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: 安全边界
+      description: 说明该能力如何避免误用或非授权测试。
