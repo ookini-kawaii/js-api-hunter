@@ -2,7 +2,7 @@
   "name": "js-api-hunter",
   "displayName": "JS API Hunter",
   "description": "从 JS 文件中自动发现隐藏 API 接口，拼装完整请求，批量越权/Fuzz 测试。将 JS 接口挖洞的七步手工作坊升级为一键自动化流水线。",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "ookini-kawaii",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -378,6 +378,7 @@
     "vscode:prepublish": "npm run compile && npm run bundle",
     "compile": "tsc -p ./",
     "bundle": "node esbuild.js",
+    "test": "npm run compile && node test/parser_test.js && node test/filter_test.js && node test/signer_test.js && node test/proxy_test.js",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts"
   },

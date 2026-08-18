@@ -44,7 +44,7 @@ export function startProxyServer(
     currentServer.on('connect', (req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer) => {
       const [hostname, portStr] = (req.url || '').split(':');
       const targetPort = parseInt(portStr) || 443;
-      handleConnect(req, clientSocket, hostname, targetPort);
+      handleConnect(req, clientSocket, head, hostname, targetPort);
     });
 
     currentServer.on('error', (err: NodeJS.ErrnoException) => {
@@ -88,12 +88,15 @@ export function getProxyServer(): ProxyInfo | null {
 function handleConnect(
   clientReq: http.IncomingMessage,
   clientSocket: net.Socket,
+  head: Buffer,
   hostname: string,
   port: number
 ): void {
-  clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-
   const serverSocket = net.connect(port, hostname, () => {
+    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    if (head.length > 0) {
+      serverSocket.write(head);
+    }
     // 双向管道
     clientSocket.pipe(serverSocket);
     serverSocket.pipe(clientSocket);
@@ -133,7 +136,6 @@ function handleHttp(
     path: options.path,
     method: clientReq.method,
     headers: { ...clientReq.headers },
-    rejectUnauthorized: false,
   }, (proxyRes: http.IncomingMessage) => {
     const chunks: Buffer[] = [];
     const isJs = isJavaScriptResponse(proxyRes, targetUrl);

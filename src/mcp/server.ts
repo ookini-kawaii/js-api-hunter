@@ -22,6 +22,8 @@ import { assembleRequests } from '../assembler/assembler';
 import { runFuzz, runHorizontalFuzz } from '../fuzzer/fuzzer';
 import { EndpointInfo, FuzzResult, ScanContext, FuzzConfig } from '../types';
 
+const SERVER_VERSION = '0.3.3';
+
 // 模拟 VS Code 配置
 function getConfig(): { concurrentRequests: number; timeout: number; userAgent: string; userToken?: string } {
   return {
@@ -158,7 +160,7 @@ async function handleMcpRequest(request: any): Promise<any> {
         jsonrpc: '2.0',
         result: {
           protocolVersion: '2024-11-05',
-          serverInfo: { name: 'js-api-hunter', version: '0.1.0' },
+          serverInfo: { name: 'js-api-hunter', version: SERVER_VERSION },
           capabilities: { tools: {} }
         },
         id
