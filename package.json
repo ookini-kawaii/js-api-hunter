@@ -2,7 +2,7 @@
   "name": "js-api-hunter",
   "displayName": "JS API Hunter",
   "description": "从 JS 文件中自动发现隐藏 API 接口，拼装完整请求，批量越权/Fuzz 测试。将 JS 接口挖洞的七步手工作坊升级为一键自动化流水线。",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "ookini-kawaii",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -391,6 +391,6 @@
   "dependencies": {
     "acorn": "^8.11.0",
     "acorn-walk": "^8.3.0",
-    "puppeteer-core": "^22.0.0"
+    "puppeteer-core": "^25.8.0"
   }
 }

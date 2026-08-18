@@ -22,7 +22,7 @@ import { assembleRequests } from '../assembler/assembler';
 import { runFuzz, runHorizontalFuzz } from '../fuzzer/fuzzer';
 import { EndpointInfo, FuzzResult, ScanContext, FuzzConfig } from '../types';
 
-const SERVER_VERSION = '0.3.3';
+const SERVER_VERSION = '0.3.4';
 
 // 模拟 VS Code 配置
 function getConfig(): { concurrentRequests: number; timeout: number; userAgent: string; userToken?: string } {
